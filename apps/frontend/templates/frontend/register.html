@@ -1,0 +1,20 @@
+{% extends 'frontend/base.html' %}
+
+{% block content %}
+<section class="card">
+  <h2>Register</h2>
+  <form method="post">
+    {% csrf_token %}
+    <label>Email
+      <input name="email" placeholder="Email" required />
+    </label>
+    <label>Username
+      <input name="username" placeholder="Username" required />
+    </label>
+    <label>Password
+      <input name="password" type="password" required />
+    </label>
+    <button type="submit">Register</button>
+  </form>
+</section>
+{% endblock %}

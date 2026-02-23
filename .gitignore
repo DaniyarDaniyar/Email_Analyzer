@@ -1,0 +1,128 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Linters
+.mypy_cache/
+.ruff_cache/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.env/
+.venv/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+.coverage.*
+
+# Django stuff:
+*.log
+*.pot
+*.py[cod].cover
+local_settings.py           # локальные настройки (если используете)
+db.sqlite3                  # локальная sqlite БД
+db.sqlite3-journal
+
+# Media and collected static files
+media/
+uploads/
+staticfiles/                # если используете collectstatic в отдельную папку
+/static/                    # если статические файлы генерируются локально
+
+# If you keep secrets in .env
+.env
+.env.*                     
+
+# Node / front-end
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnp.*
+.pnpm-debug.log
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# JetBrains
+/.idea/
+*.iml
+
+# Editors
+*.swp
+*~ 
+.project
+.pydevproject
+
+# Static analysis / caches
+.mypy_cache/
+.ruff_cache/
+.fastapi_cache/
+coverage.xml
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Sphinx documentation build
+docs/_build/
+
+# Misc
+*.log
+*.pot
+*.tmp
+*.bak
+*.orig
+
+# Database
+*.sqlite3
+

@@ -1,0 +1,71 @@
+{% extends 'frontend/base.html' %}
+
+{% block content %}
+<section class="card">
+  <h2>Scan</h2>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label>Input type
+      <select name="input_type">
+        <option value="text">Text</option>
+        <option value="url">URL</option>
+        <option value="file">File (pdf/txt)</option>
+      </select>
+    </label>
+    <label id="input-data-label">Text / URL
+      <textarea name="input_data" rows="6" placeholder="Paste email content, URL, or text to analyze..."></textarea>
+    </label>
+    <label id="file-label" style="display:none">File
+      <input type="file" name="file" accept=".pdf,.txt" />
+    </label>
+    <div style="display:flex;gap:8px">
+      <button type="submit" id="scan-btn">Scan</button>
+      <div id="loading-spinner" style="display:none;align-items:center">Analyzing...</div>
+    </div>
+  </form>
+
+  {% if result %}
+    <div class="result-box {% if result.classification == 'malicious' %}malicious{% else %}benign{% endif %}">
+      <h3 style="margin-top:0">📊 Scan Result</h3>
+      <div class="result-item">
+        <strong>Classification:</strong> <span class="badge">{{ result.classification|upper }}</span>
+      </div>
+      <div class="result-item">
+        <strong>Risk Score:</strong> <span class="score-value">{{ result.score }}/100</span>
+      </div>
+      <div class="result-item">
+        <strong>Analysis:</strong> {{ result.explanation }}
+      </div>
+      {% if result.report_url %}
+        <div class="result-item" style="margin-top:12px">
+          <a href="{{ result.report_url }}" target="_blank" class="btn-secondary">📥 Download PDF Report</a>
+        </div>
+      {% endif %}
+      {% if result.saved %}<p style="color:#059669;margin-top:8px"><strong>✓ Saved to your history</strong></p>{% endif %}
+    </div>
+  {% endif %}
+</section>
+
+<script>
+(function(){
+  const sel = document.querySelector('select[name="input_type"]');
+  const dataLabel = document.getElementById('input-data-label');
+  const fileLabel = document.getElementById('file-label');
+  const form = document.getElementById('scan-form');
+  const btn = document.getElementById('scan-btn');
+  const spinner = document.getElementById('loading-spinner');
+
+  sel.addEventListener('change', function(e){
+    const v = e.target.value;
+    dataLabel.style.display = (v==='file') ? 'none' : 'block';
+    fileLabel.style.display = (v==='file') ? 'block' : 'none';
+  });
+
+  form.addEventListener('submit', function(){
+    btn.disabled = true;
+    spinner.style.display = 'flex';
+  });
+})();
+</script>
+
+{% endblock %}

@@ -1,0 +1,23 @@
+[project]
+name = "email-detector"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=6.0.2",
+    "django-unfold>=0.80.2",
+    "djangorestframework>=3.16.1",
+    "djangorestframework-simplejwt>=5.5.1",
+    "drf-spectacular>=0.29.0",
+    "google-genai>=0.6.0",
+    "jsonschema>=4.26.0",
+    "openai>=2.21.0",
+    "pillow>=12.1.1",
+    "pypdf2>=3.0.1",
+    "python-decouple>=3.8",
+    "rest-framework-simplejwt>=0.0.2",
+    "requests>=2.30.0",
+    "reportlab>=4.0",
+    "celery>=5.6.2",
+]

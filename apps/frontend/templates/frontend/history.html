@@ -1,0 +1,36 @@
+{% extends 'frontend/base.html' %}
+
+{% block content %}
+<section class="card">
+  <h2>Your history</h2>
+  <ul>
+    {% for it in items %}
+      <li>
+        {{ forloop.counter0|add:start_index }}.
+        <strong>{{ it.input_type }}</strong>
+        — {{ it.input_data|truncatechars:200 }}
+        — score {{ it.score|floatformat:2 }}
+        — {{ it.is_safe|yesno:"safe,malicious" }}
+        — {{ it.created_at|date:"M. d, Y, g:i a" }}
+        {% if it.report_file %}
+          — <a href="{% url 'detector-download-report' pk=it.id %}" class="link-inline">📥 Report</a>
+        {% endif %}
+      </li>
+    {% empty %}
+      <li>No results yet.</li>
+    {% endfor %}
+  </ul>
+
+  {% if is_paginated %}
+    <nav class="pagination">
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+      {% endif %}
+      <span>Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}">Next</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+</section>
+{% endblock %}

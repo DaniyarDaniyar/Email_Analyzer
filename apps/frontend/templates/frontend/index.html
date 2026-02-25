@@ -26,7 +26,7 @@
 
   {% if result %}
     <div class="result-box {% if result.classification == 'malicious' %}malicious{% else %}benign{% endif %}">
-      <h3 style="margin-top:0">📊 Scan Result</h3>
+      <h3 style="margin-top:0">Scan Result</h3>
       <div class="result-item">
         <strong>Classification:</strong> <span class="badge">{{ result.classification|upper }}</span>
       </div>

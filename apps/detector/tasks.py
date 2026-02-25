@@ -2,9 +2,9 @@ from celery import shared_task
 from typing import Any, Dict
 from apps.detector.models import DetectorResult
 from apps.detector.services.parser import parse_email
-from apps.detector.services.reputation import ReputationService
 from apps.detector.services.ai_service import analyze_parsed
 from apps.detector.services.report import generate_pdf
+from apps.detector.services.analysis import build_reputation, compute_scores
 from django.conf import settings
 import os
 import time
@@ -31,68 +31,14 @@ def analyze_email_task(self, detector_result_id: int) -> Dict[str, Any]:
     parsed = parse_email(dr.input_data)
 
     # reputation
-    rep_service = ReputationService()
-    reputation = {"urls": {}, "domains": {}, "ips": {}}
-    for u in parsed.get("urls", []):
-        reputation["urls"][u] = rep_service.check_url(u)
-    for d in parsed.get("domains", []):
-        reputation["domains"][d] = rep_service.check_domain(d)
-    for ip in parsed.get("ips", []):
-        reputation["ips"][ip] = rep_service.check_ip(ip)
+    reputation = build_reputation(parsed, use_concurrency=False)
 
     # AI
     ai_out = analyze_parsed(parsed, reputation)
 
-    # scoring (simplified: mirror view's logic)
-    malicious_count = 0
-    total_indicators = 0
-
-    def _is_malicious(rep: dict) -> bool:
-        try:
-            vt = rep.get("virustotal") or rep.get("virustotal_submit")
-            if isinstance(vt, dict):
-                data = vt.get("data") or vt
-                attrs = data.get("attributes") if isinstance(data, dict) else None
-                if attrs and isinstance(attrs, dict):
-                    stats = attrs.get("last_analysis_stats") or {}
-                    if isinstance(stats, dict) and int(stats.get("malicious", 0)) > 0:
-                        return True
-            abuse = rep.get("abuseipdb") or {}
-            if isinstance(abuse, dict):
-                a_data = abuse.get("data") or {}
-                if isinstance(a_data, dict) and a_data.get("abuseConfidenceScore", 0) and int(a_data.get("abuseConfidenceScore", 0)) > 0:
-                    return True
-        except Exception:
-            return False
-        return False
-
-    for r in reputation["urls"].values():
-        total_indicators += 1
-        if _is_malicious(r):
-            malicious_count += 1
-    for r in reputation["domains"].values():
-        total_indicators += 1
-        if _is_malicious(r):
-            malicious_count += 1
-    for r in reputation["ips"].values():
-        total_indicators += 1
-        if _is_malicious(r):
-            malicious_count += 1
-
-    malicious_ratio = (malicious_count / total_indicators) if total_indicators > 0 else 0.0
-    ai_conf = float(ai_out.get("confidence", 0))
-
-    anomalies = 0
-    checks = 0
-    for field in ("spf", "dkim", "dmarc"):
-        val = parsed.get(field)
-        if val is not None:
-            checks += 1
-            if str(val).lower() != "pass":
-                anomalies += 1
-    header_score = (anomalies / checks * 100) if checks > 0 else 0.0
-
-    final_score = ai_conf * 0.5 + malicious_ratio * 100 * 0.3 + header_score * 0.2
+    # scoring (reuse same logic as views)
+    scores = compute_scores(parsed, reputation, ai_out)
+    final_score = scores["final_score"]
 
     report = {
         "title": "Email Analysis Report",
@@ -100,7 +46,7 @@ def analyze_email_task(self, detector_result_id: int) -> Dict[str, Any]:
         "parsed": parsed,
         "reputation": reputation,
         "ai": ai_out,
-        "scoring": {"final_score": round(final_score, 2), "malicious_ratio": malicious_ratio, "header_score": header_score},
+        "scoring": scores,
     }
 
     # save PDF

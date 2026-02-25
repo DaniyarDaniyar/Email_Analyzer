@@ -1,14 +1,16 @@
-import re
 import hashlib
-from typing import Any, Dict, List
+import re
 from email import policy
 from email.parser import Parser
+from typing import Any, Dict, List
 from urllib.parse import urlparse
 
+from django.core.cache import cache
 
-URL_RE = re.compile(r"https?://[\w\-\./?%&=+#:@;~,]+", flags=re.I)
-EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
-IPV4_RE = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
+
+URL_RE = re.compile(r"https?://[\w\\-\\./?%&=+#:@;~,]+", flags=re.I)
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
+IPV4_RE = re.compile(r"\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b")
 
 
 def _deobfuscate(text: str) -> str:
@@ -32,6 +34,13 @@ def parse_email(raw: str) -> Dict[str, Any]:
     Returns a dictionary with keys: headers, spf, dkim, dmarc, plain, html,
     urls, emails, ips, domains, attachments (list of {filename, sha256}).
     """
+    # cache by hash of raw content
+    raw_hash = hashlib.sha256(raw.encode("utf-8", errors="replace")).hexdigest()
+    cache_key = f"parsed_email:{raw_hash}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     result: Dict[str, Any] = {
         "headers": {},
         "spf": None,
@@ -58,6 +67,7 @@ def parse_email(raw: str) -> Dict[str, Any]:
         result["emails"] = list(set(EMAIL_RE.findall(body)))
         result["ips"] = list(set(IPV4_RE.findall(body)))
         result["domains"] = list({_hostname_from_url(u) for u in result["urls"] if _hostname_from_url(u)})
+        cache.set(cache_key, result, timeout=60 * 60 * 24)
         return result
 
     # Headers
@@ -124,4 +134,5 @@ def parse_email(raw: str) -> Dict[str, Any]:
     domains = {h for h in (_hostname_from_url(u) for u in urls) if h}
     result["domains"] = list(domains)
 
+    cache.set(cache_key, result, timeout=60 * 60 * 24)
     return result

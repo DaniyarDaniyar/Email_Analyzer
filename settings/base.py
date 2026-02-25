@@ -128,3 +128,46 @@ STATIC_URL = "static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
 MEDIA_URL = "media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+
+
+# ----------------------------------------------------------------
+# Celery
+#
+# For local development you can run Redis on localhost.
+# Configure via environment variables if needed.
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", CELERY_BROKER_URL)
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+
+
+# ----------------------------------------------------------------
+# Cache
+#
+# Uses Redis if CACHE_URL / REDIS_URL are set, otherwise falls back to local memory.
+REDIS_CACHE_URL = os.getenv("CACHE_URL") or os.getenv("REDIS_URL") or "redis://localhost:6379/1"
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "email_detector_locmem",
+    }
+}
+
+try:
+    # Prefer Redis cache if django-redis is installed and URL is available.
+    import django_redis  # type: ignore  # noqa: F401
+
+    CACHES["default"] = {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_CACHE_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+    }
+except Exception:
+    # Fallback to in-memory cache; application will still work.
+    pass

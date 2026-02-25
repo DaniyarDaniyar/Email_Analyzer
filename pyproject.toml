@@ -20,4 +20,6 @@ dependencies = [
     "requests>=2.30.0",
     "reportlab>=4.0",
     "celery>=5.6.2",
+    "redis>=5.0.0",
+    "django-redis>=5.4.0",
 ]

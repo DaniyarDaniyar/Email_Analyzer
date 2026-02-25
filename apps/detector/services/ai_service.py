@@ -1,9 +1,11 @@
+import hashlib
+import json
 import os
 import re
-import json
 from typing import Any, Dict
 
 import openai
+from django.core.cache import cache
 
 # Lazy initialization flag
 _initialized = False
@@ -67,6 +69,13 @@ def _extract_json_from_text(text: str) -> Dict[str, Any]:
 def _generate_structured(prompt: str) -> Dict[str, Any]:
     """Call OpenAI Responses API with the prompt and extract JSON from the reply."""
     try:
+        # cache key based on prompt hash to avoid repeated model calls
+        prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        cache_key = f"ai:prompt:{prompt_hash}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         client = _get_client()
         resp = client.responses.create(
             model="gpt-3.5-turbo",
@@ -105,6 +114,8 @@ def _generate_structured(prompt: str) -> Dict[str, Any]:
                 text = str(resp)
 
         data = _extract_json_from_text(text)
+        # cache AI response for 24 hours
+        cache.set(cache_key, data, timeout=60 * 60 * 24)
         return data
     except Exception as e:
         raise ValueError(f"AI service error: {str(e)}")

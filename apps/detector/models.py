@@ -12,7 +12,12 @@ class DetectorResult(AbstractBaseModel):
 
     INPUT_TEXT = "text"
     INPUT_URL = "url"
-    INPUT_CHOICES = ((INPUT_TEXT, "text"), (INPUT_URL, "url"))
+    INPUT_FILE = "file"
+    INPUT_CHOICES = (
+        (INPUT_TEXT, "text"),
+        (INPUT_URL, "url"),
+        (INPUT_FILE, "file"),
+    )
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="detector_results",

@@ -4,11 +4,11 @@ WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1
 
-# Copy project code
 COPY . .
 
-# Install Python dependencies from pyproject.toml
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir .
+
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 8000
 

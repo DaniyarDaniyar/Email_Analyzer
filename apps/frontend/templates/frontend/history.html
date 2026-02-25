@@ -13,7 +13,7 @@
         — {{ it.is_safe|yesno:"safe,malicious" }}
         — {{ it.created_at|date:"M. d, Y, g:i a" }}
         {% if it.report_file %}
-          — <a href="{% url 'detector-download-report' pk=it.id %}" class="link-inline">📥 Report</a>
+          — <a href="{% url 'detector-download-report' pk=it.id %}" class="link-inline">Report</a>
         {% endif %}
       </li>
     {% empty %}

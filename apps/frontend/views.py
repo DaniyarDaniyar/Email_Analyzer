@@ -10,8 +10,9 @@ from apps.detector.services.file_service import extract_text_from_pdf, extract_t
 from apps.detector.models import DetectorResult
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from apps.users.models import CustomUser
+from apps.users.serializers import UserRegisterSerializer
 from apps.detector.services.parser import parse_email
-from apps.detector.services.reputation import ReputationService
+from apps.detector.services.analysis import build_reputation, compute_scores
 from apps.detector.services.report import generate_pdf
 from django.conf import settings
 from django.core.files import File as DjangoFile
@@ -56,29 +57,7 @@ def index(request):
                 return redirect('index')
 
             # Reputation checks (concurrent)
-            rep_service = ReputationService()
-            reputation = {"urls": {}, "domains": {}, "ips": {}}
-            with ThreadPoolExecutor(max_workers=6) as ex:
-                futures = {}
-                for u in parsed.get("urls", []):
-                    futures[ex.submit(rep_service.check_url, u)] = ("url", u)
-                for d in parsed.get("domains", []):
-                    futures[ex.submit(rep_service.check_domain, d)] = ("domain", d)
-                for ip in parsed.get("ips", []):
-                    futures[ex.submit(rep_service.check_ip, ip)] = ("ip", ip)
-
-                for fut in as_completed(futures):
-                    kind, val = futures[fut]
-                    try:
-                        res = fut.result()
-                    except Exception as e:
-                        res = {"error": str(e)}
-                    if kind == "url":
-                        reputation["urls"][val] = res
-                    elif kind == "domain":
-                        reputation["domains"][val] = res
-                    else:
-                        reputation["ips"][val] = res
+            reputation = build_reputation(parsed, use_concurrency=True)
 
             # Call AI on aggregated parsed+reputation
             try:
@@ -87,55 +66,8 @@ def index(request):
                 messages.error(request, f'AI analysis error: {e}')
                 return redirect('index')
 
-            # Scoring: combine AI confidence, malicious IOC ratio, header anomaly score
-            def _is_malicious(rep: dict) -> bool:
-                try:
-                    vt = rep.get("virustotal") or rep.get("virustotal_submit")
-                    if isinstance(vt, dict):
-                        data = vt.get("data") or vt
-                        attrs = data.get("attributes") if isinstance(data, dict) else None
-                        if attrs and isinstance(attrs, dict):
-                            stats = attrs.get("last_analysis_stats") or {}
-                            if isinstance(stats, dict) and int(stats.get("malicious", 0)) > 0:
-                                return True
-                    abuse = rep.get("abuseipdb") or {}
-                    if isinstance(abuse, dict):
-                        a_data = abuse.get("data") or {}
-                        if isinstance(a_data, dict) and a_data.get("abuseConfidenceScore", 0) and int(a_data.get("abuseConfidenceScore", 0)) > 0:
-                            return True
-                except Exception:
-                    return False
-                return False
-
-            total_indicators = 0
-            malicious_count = 0
-            for url, r in reputation["urls"].items():
-                total_indicators += 1
-                if _is_malicious(r):
-                    malicious_count += 1
-            for dom, r in reputation["domains"].items():
-                total_indicators += 1
-                if _is_malicious(r):
-                    malicious_count += 1
-            for ip, r in reputation["ips"].items():
-                total_indicators += 1
-                if _is_malicious(r):
-                    malicious_count += 1
-
-            malicious_ratio = (malicious_count / total_indicators) if total_indicators > 0 else 0.0
-
-            ai_conf = float(ai_out.get("confidence", 0))
-            anomalies = 0
-            checks = 0
-            for field in ("spf", "dkim", "dmarc"):
-                val = parsed.get(field)
-                if val is not None:
-                    checks += 1
-                    if str(val).lower() != "pass":
-                        anomalies += 1
-            header_score = (anomalies / checks * 100) if checks > 0 else 0.0
-
-            final_score = ai_conf * 0.5 + malicious_ratio * 100 * 0.3 + header_score * 0.2
+            scores = compute_scores(parsed, reputation, ai_out)
+            final_score = scores["final_score"]
 
             # Build report structure
             report = {
@@ -144,7 +76,7 @@ def index(request):
                 "parsed": parsed,
                 "reputation": reputation,
                 "ai": ai_out,
-                "scoring": {"final_score": round(final_score, 2), "malicious_ratio": malicious_ratio, "header_score": header_score},
+                "scoring": scores,
             }
 
             # Save PDF to media/reports
@@ -277,22 +209,40 @@ def history(request):
 @require_http_methods(["GET", "POST"])
 def register_view(request):
     if request.method == 'POST':
-        email = request.POST.get('email')
-        username = request.POST.get('username')
-        password = request.POST.get('password')
-        if not (email and username and password):
-            messages.error(request, 'All fields are required')
-            return redirect('register')
-        try:
-            user = CustomUser.objects.create_user(email=email, username=username, password=password)
-            user = authenticate(request, username=email, password=password)
-            if user:
-                login(request, user)
-                messages.success(request, 'Registered and logged in')
-                return redirect('index')
-        except Exception as e:
-            messages.error(request, f'Registration error: {e}')
-            return redirect('register')
+        data = {
+            "email": request.POST.get('email'),
+            "username": request.POST.get('username'),
+            "first_name": request.POST.get('first_name') or "",
+            "last_name": request.POST.get('last_name') or "",
+            "password": request.POST.get('password'),
+            "password2": request.POST.get('password2'),
+        }
+
+        serializer = UserRegisterSerializer(data=data)
+        if serializer.is_valid():
+            try:
+                user = serializer.save()
+                user = authenticate(request, username=data["email"], password=data["password"])
+                if user:
+                    login(request, user)
+                    messages.success(request, 'Registered and logged in')
+                    return redirect('index')
+                messages.error(request, 'Registration successful, but automatic login failed')
+            except Exception as e:
+                messages.error(request, f'Registration error: {e}')
+        else:
+            # Show first error message in flash, rest will be visible on the form if rendered
+            errors = []
+            for field, msgs in serializer.errors.items():
+                if isinstance(msgs, (list, tuple)):
+                    errors.extend(msgs)
+                else:
+                    errors.append(str(msgs))
+            if errors:
+                messages.error(request, errors[0])
+
+        return redirect('register')
+
     return render(request, 'frontend/register.html')
 
 

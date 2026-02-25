@@ -1,7 +1,9 @@
 import os
 import time
 from typing import Any, Dict, Optional
+
 import requests
+from django.core.cache import cache
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -35,6 +37,11 @@ class ReputationService:
             return {"error": str(e), "status_code": getattr(e, 'response', None) and getattr(e.response, 'status_code', None)}
 
     def check_ip(self, ip: str) -> Dict[str, Any]:
+        cache_key = f"rep:ip:{ip}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         out: Dict[str, Any] = {"ip": ip}
         if self.abuse_key:
             try:
@@ -57,9 +64,16 @@ class ReputationService:
         else:
             out["virustotal"] = {"error": "no_api_key"}
 
+        # cache for 12 hours
+        cache.set(cache_key, out, timeout=60 * 60 * 12)
         return out
 
     def check_domain(self, domain: str) -> Dict[str, Any]:
+        cache_key = f"rep:domain:{domain}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         out: Dict[str, Any] = {"domain": domain}
         if self.vt_key:
             try:
@@ -71,9 +85,15 @@ class ReputationService:
         else:
             out["virustotal"] = {"error": "no_api_key"}
 
+        cache.set(cache_key, out, timeout=60 * 60 * 12)
         return out
 
     def check_url(self, url_to_check: str) -> Dict[str, Any]:
+        cache_key = f"rep:url:{url_to_check}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         out: Dict[str, Any] = {"url": url_to_check}
         if self.vt_key:
             try:
@@ -104,4 +124,6 @@ class ReputationService:
         else:
             out["urlscan_submit"] = {"error": "no_api_key"}
 
+        # cache for 6 hours (URL reputation can change more often)
+        cache.set(cache_key, out, timeout=60 * 60 * 6)
         return out

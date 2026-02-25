@@ -33,13 +33,13 @@ from apps.detector.services.ai_service import analyze_parsed
 from urllib.parse import urlparse
 from apps.detector.services.file_service import extract_text_from_pdf, extract_text_from_txt
 from apps.detector.services.parser import parse_email
-from apps.detector.services.reputation import ReputationService
+from apps.detector.services.analysis import build_reputation, compute_scores
 from apps.detector.services.report import generate_pdf
 from django.conf import settings
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from django.core.files import File as DjangoFile
+from apps.detector.tasks import analyze_email_task
 
 
 class DetectorViewSet(ViewSet, DRFResponseMixin):
@@ -70,6 +70,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
         serializer.is_valid(raise_exception=True)
 
         input_type = serializer.validated_data["input_type"]
+        async_requested = str(request.query_params.get("async", "")).lower() in ("1", "true", "yes")
         
         # Extract text based on input type
         try:
@@ -95,6 +96,22 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                 status=HTTP_400_BAD_REQUEST,
             )
 
+        # Optional async mode (requires auth): save the raw input and process via Celery
+        if async_requested:
+            if not request.user.is_authenticated:
+                return DRFResponse({"error": "Authentication required for async scan"}, status=HTTP_403_FORBIDDEN)
+
+            detector_result = DetectorResult.objects.create(
+                user=request.user,
+                input_type=input_type,
+                input_data=input_data,
+            )
+            analyze_email_task.delay(detector_result.id)
+            return DRFResponse(
+                {"status": "queued", "result_id": detector_result.id},
+                status=HTTP_201_CREATED,
+            )
+
         # Full pipeline: parse -> reputation checks -> AI -> scoring -> PDF report
         if input_type in ["text", "file"]:
             try:
@@ -103,29 +120,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                 return DRFResponse({"error": f"Parsing error: {e}"}, status=HTTP_400_BAD_REQUEST)
 
             # Reputation checks (concurrent)
-            rep_service = ReputationService()
-            reputation = {"urls": {}, "domains": {}, "ips": {}}
-            with ThreadPoolExecutor(max_workers=6) as ex:
-                futures = {}
-                for u in parsed.get("urls", []):
-                    futures[ex.submit(rep_service.check_url, u)] = ("url", u)
-                for d in parsed.get("domains", []):
-                    futures[ex.submit(rep_service.check_domain, d)] = ("domain", d)
-                for ip in parsed.get("ips", []):
-                    futures[ex.submit(rep_service.check_ip, ip)] = ("ip", ip)
-
-                for fut in as_completed(futures):
-                    kind, val = futures[fut]
-                    try:
-                        res = fut.result()
-                    except Exception as e:
-                        res = {"error": str(e)}
-                    if kind == "url":
-                        reputation["urls"][val] = res
-                    elif kind == "domain":
-                        reputation["domains"][val] = res
-                    else:
-                        reputation["ips"][val] = res
+            reputation = build_reputation(parsed, use_concurrency=True)
 
             # Call AI on aggregated parsed+reputation
             try:
@@ -133,57 +128,8 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
             except Exception as e:
                 return DRFResponse({"error": f"AI analysis error: {e}"}, status=HTTP_400_BAD_REQUEST)
 
-            # Scoring: combine AI confidence, malicious IOC ratio, header anomaly score
-            def _is_malicious(rep: dict) -> bool:
-                try:
-                    vt = rep.get("virustotal") or rep.get("virustotal_submit")
-                    if isinstance(vt, dict):
-                        data = vt.get("data") or vt
-                        attrs = data.get("attributes") if isinstance(data, dict) else None
-                        if attrs and isinstance(attrs, dict):
-                            stats = attrs.get("last_analysis_stats") or {}
-                            if isinstance(stats, dict) and int(stats.get("malicious", 0)) > 0:
-                                return True
-                    abuse = rep.get("abuseipdb") or {}
-                    # abuseipdb returns data->abuseConfidenceScore
-                    if isinstance(abuse, dict):
-                        a_data = abuse.get("data") or {}
-                        if isinstance(a_data, dict) and a_data.get("abuseConfidenceScore", 0) and int(a_data.get("abuseConfidenceScore", 0)) > 0:
-                            return True
-                except Exception:
-                    return False
-                return False
-
-            total_indicators = 0
-            malicious_count = 0
-            for url, r in reputation["urls"].items():
-                total_indicators += 1
-                if _is_malicious(r):
-                    malicious_count += 1
-            for dom, r in reputation["domains"].items():
-                total_indicators += 1
-                if _is_malicious(r):
-                    malicious_count += 1
-            for ip, r in reputation["ips"].items():
-                total_indicators += 1
-                if _is_malicious(r):
-                    malicious_count += 1
-
-            malicious_ratio = (malicious_count / total_indicators) if total_indicators > 0 else 0.0
-
-            ai_conf = float(ai_out.get("confidence", 0))
-            # header anomaly: count non-pass results
-            anomalies = 0
-            checks = 0
-            for field in ("spf", "dkim", "dmarc"):
-                val = parsed.get(field)
-                if val is not None:
-                    checks += 1
-                    if str(val).lower() != "pass":
-                        anomalies += 1
-            header_score = (anomalies / checks * 100) if checks > 0 else 0.0
-
-            final_score = ai_conf * 0.5 + malicious_ratio * 100 * 0.3 + header_score * 0.2
+            scores = compute_scores(parsed, reputation, ai_out)
+            final_score = scores["final_score"]
 
             # Build report structure
             report = {
@@ -192,7 +138,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                 "parsed": parsed,
                 "reputation": reputation,
                 "ai": ai_out,
-                "scoring": {"final_score": round(final_score, 2), "malicious_ratio": malicious_ratio, "header_score": header_score},
+                "scoring": scores,
             }
 
             # Save PDF to media/reports
@@ -251,29 +197,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                 parsed = {"urls": [input_data], "domains": [], "ips": []}
 
             # Reputation checks (only for found indicators)
-            rep_service = ReputationService()
-            reputation = {"urls": {}, "domains": {}, "ips": {}}
-            with ThreadPoolExecutor(max_workers=6) as ex:
-                futures = {}
-                for u in parsed.get("urls", []):
-                    futures[ex.submit(rep_service.check_url, u)] = ("url", u)
-                for d in parsed.get("domains", []):
-                    futures[ex.submit(rep_service.check_domain, d)] = ("domain", d)
-                for ip in parsed.get("ips", []):
-                    futures[ex.submit(rep_service.check_ip, ip)] = ("ip", ip)
-
-                for fut in as_completed(futures):
-                    kind, val = futures[fut]
-                    try:
-                        res = fut.result()
-                    except Exception as e:
-                        res = {"error": str(e)}
-                    if kind == "url":
-                        reputation["urls"][val] = res
-                    elif kind == "domain":
-                        reputation["domains"][val] = res
-                    else:
-                        reputation["ips"][val] = res
+            reputation = build_reputation(parsed, use_concurrency=True)
 
             try:
                 ai_out = analyze_parsed(parsed, reputation)
@@ -281,7 +205,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                 return DRFResponse({"error": f"AI analysis error: {e}"}, status=HTTP_400_BAD_REQUEST)
 
             result = {
-                "classification": "malicious" if ai_out.get("is_phishing") else "benign",
+                "classification": "phishing" if ai_out.get("is_phishing") else "benign",
                 "score": ai_out.get("confidence", 0),
                 "explanation": ai_out.get("reasoning", ai_out.get("explanation", "")),
             }

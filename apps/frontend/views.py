@@ -14,12 +14,10 @@ from apps.users.serializers import UserRegisterSerializer
 from apps.detector.services.parser import parse_email
 from apps.detector.services.analysis import build_reputation, compute_scores
 from apps.detector.services.report import generate_pdf
-from apps.detector.services.reputation import ReputationService
 from django.conf import settings
 from django.core.files import File as DjangoFile
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 @require_http_methods(["GET", "POST"])
@@ -132,29 +130,8 @@ def index(request):
             except Exception:
                 parsed = {"urls": [input_data], "domains": [], "ips": []}
 
-            rep_service = ReputationService()
-            reputation = {"urls": {}, "domains": {}, "ips": {}}
-            with ThreadPoolExecutor(max_workers=6) as ex:
-                futures = {}
-                for u in parsed.get("urls", []):
-                    futures[ex.submit(rep_service.check_url, u)] = ("url", u)
-                for d in parsed.get("domains", []):
-                    futures[ex.submit(rep_service.check_domain, d)] = ("domain", d)
-                for ip in parsed.get("ips", []):
-                    futures[ex.submit(rep_service.check_ip, ip)] = ("ip", ip)
-
-                for fut in as_completed(futures):
-                    kind, val = futures[fut]
-                    try:
-                        res = fut.result()
-                    except Exception as e:
-                        res = {"error": str(e)}
-                    if kind == "url":
-                        reputation["urls"][val] = res
-                    elif kind == "domain":
-                        reputation["domains"][val] = res
-                    else:
-                        reputation["ips"][val] = res
+            # Re-use the same reputation service used by the API view
+            reputation = build_reputation(parsed, use_concurrency=True)
 
             try:
                 ai_out = analyze_parsed(parsed, reputation)

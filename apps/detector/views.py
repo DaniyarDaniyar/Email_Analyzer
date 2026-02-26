@@ -20,8 +20,6 @@ from rest_framework.status import (
 )
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
-from rest_framework.authentication import SessionAuthentication
-from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.detector.models import DetectorResult
 from apps.detector.serializers import (
@@ -300,7 +298,6 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
     @action(
         detail=True,
         methods=["GET"],
-        authentication_classes=[SessionAuthentication, JWTAuthentication],
         permission_classes=[IsAuthenticated],
         url_path="report/download",
     )
@@ -321,32 +318,11 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
             )
 
         try:
-            try:
-                file_obj = result.report_file.open("rb")
-                filename = result.report_file.name.split('/')[-1]
-                response = FileResponse(file_obj, content_type="application/pdf")
-                response['Content-Disposition'] = f'attachment; filename="{filename}"'
-                return response
-            except FileNotFoundError:
-                # attempt to find a file in MEDIA_ROOT/reports with same numeric prefix
-                import re
-                import os
-                media_root = getattr(settings, "MEDIA_ROOT", "media") or "media"
-                reports_dir = os.path.join(media_root, "reports")
-                base = result.report_file.name.split('/')[-1]
-                m = re.search(r'report_(\d+)', base)
-                prefix = f"report_{m.group(1)}" if m else os.path.splitext(base)[0]
-                try:
-                    for f in os.listdir(reports_dir):
-                        if f.startswith(prefix) and f.lower().endswith('.pdf'):
-                            alt_path = os.path.join(reports_dir, f)
-                            af = open(alt_path, 'rb')
-                            response = FileResponse(af, content_type='application/pdf')
-                            response['Content-Disposition'] = f'attachment; filename="{f}"'
-                            return response
-                except Exception:
-                    pass
-                return DRFResponse({"error": "Report file not found on disk"}, status=HTTP_404_NOT_FOUND)
+            file_obj = result.report_file.open("rb")
+            filename = result.report_file.name.split('/')[-1]
+            response = FileResponse(file_obj, content_type="application/pdf")
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
         except Exception as e:
             return DRFResponse(
                 {"error": f"Failed to download report: {str(e)}"},

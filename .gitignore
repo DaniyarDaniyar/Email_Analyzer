@@ -126,6 +126,3 @@ docs/_build/
 # Database
 *.sqlite3
 
-# PDF reports
-*.pdf
-

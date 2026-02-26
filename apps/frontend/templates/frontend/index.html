@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card">
   <h2>Scan</h2>
-  <form method="post" enctype="multipart/form-data">
+  <form id="scan-form" method="post" enctype="multipart/form-data">
     {% csrf_token %}
     <label>Input type
       <select name="input_type">

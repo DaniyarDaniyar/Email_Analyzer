@@ -113,7 +113,27 @@ def _generate_structured(prompt: str) -> Dict[str, Any]:
             else:
                 text = str(resp)
 
-        data = _extract_json_from_text(text)
+        # Ensure we always work with a string before JSON extraction
+        if text is None:
+            raise ValueError("Empty response from model")
+        if not isinstance(text, str):
+            text = str(text)
+
+        # Try to parse JSON; if the model didn't return valid JSON (which can
+        # happen on long / tricky inputs), fall back to a safe default structure
+        # so that the rest of the pipeline (scores, PDF, history) still works
+        # instead of failing the whole request.
+        try:
+            data = _extract_json_from_text(text)
+        except ValueError as parse_err:
+            data = {
+                "is_phishing": False,
+                "confidence": 0,
+                "attack_type": "unknown",
+                "signals": [],
+                "reasoning": f"Model response could not be parsed as JSON: {parse_err}",
+            }
+
         # cache AI response for 24 hours
         cache.set(cache_key, data, timeout=60 * 60 * 24)
         return data

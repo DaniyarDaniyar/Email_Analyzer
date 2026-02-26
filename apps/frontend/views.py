@@ -14,6 +14,7 @@ from apps.users.serializers import UserRegisterSerializer
 from apps.detector.services.parser import parse_email
 from apps.detector.services.analysis import build_reputation, compute_scores
 from apps.detector.services.report import generate_pdf
+from apps.detector.services.reputation import ReputationService
 from django.conf import settings
 from django.core.files import File as DjangoFile
 import os

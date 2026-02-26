@@ -76,7 +76,7 @@ class CustomUserAdmin(DjangoUserAdmin, ModelAdmin):
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        ("Personal info", {"fields": ("username", "first_name", "last_name")}),
+        ("Personal info", {"fields": ("username", "first_name", "last_name", "birth_date")}),
         ("Permissions", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
         ("Important dates", {"fields": ("last_login",)}),
     )

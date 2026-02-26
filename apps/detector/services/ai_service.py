@@ -78,8 +78,9 @@ def _generate_structured(prompt: str) -> Dict[str, Any]:
 
         client = _get_client()
         resp = client.responses.create(
-            model="gpt-5-mini",
+            model="gpt-3.5-turbo",
             input=prompt,
+            temperature=0,
             max_output_tokens=1024,
         )
 

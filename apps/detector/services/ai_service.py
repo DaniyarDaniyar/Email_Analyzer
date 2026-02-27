@@ -67,7 +67,7 @@ def _extract_json_from_text(text: str) -> Dict[str, Any]:
 
 
 def _generate_structured(prompt: str) -> Dict[str, Any]:
-    """Call OpenAI Responses API with the prompt and extract JSON from the reply."""
+    """Call OpenAI Chat API with the prompt and extract JSON from the reply."""
     try:
         # cache key based on prompt hash to avoid repeated model calls
         prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
@@ -77,41 +77,19 @@ def _generate_structured(prompt: str) -> Dict[str, Any]:
             return cached
 
         client = _get_client()
-        resp = client.responses.create(
+        # Use the correct Chat Completions API with messages format
+        resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            input=prompt,
+            messages=[
+                {"role": "system", "content": "You are an email security analyst. Respond ONLY with valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
             temperature=0,
-            max_output_tokens=1024,
+            max_tokens=512,
         )
 
-        # Try common extraction points for the returned text. New SDKs
-        # provide `output_text` on the response or structured `output`.
-        text = None
-        if hasattr(resp, 'output_text') and getattr(resp, 'output_text'):
-            text = resp.output_text
-        else:
-            out = None
-            try:
-                out = getattr(resp, 'output')
-            except Exception:
-                out = resp.get('output') if isinstance(resp, dict) else None
-
-            if out and isinstance(out, list) and len(out) > 0:
-                first = out[0]
-                if isinstance(first, dict):
-                    content = first.get('content') or first.get('data') or None
-                    if isinstance(content, list) and len(content) > 0:
-                        piece = content[0]
-                        if isinstance(piece, dict):
-                            text = piece.get('text') or piece.get('content') or str(piece)
-                        else:
-                            text = str(piece)
-                    else:
-                        text = first.get('text') or str(first)
-                else:
-                    text = str(first)
-            else:
-                text = str(resp)
+        # Extract text from chat response
+        text = resp.choices[0].message.content if resp.choices else None
 
         # Ensure we always work with a string before JSON extraction
         if text is None:
@@ -121,8 +99,6 @@ def _generate_structured(prompt: str) -> Dict[str, Any]:
 
         # Try to parse JSON; if the model didn't return valid JSON (which can
         # happen on long / tricky inputs), fall back to a safe default structure
-        # so that the rest of the pipeline (scores, PDF, history) still works
-        # instead of failing the whole request.
         try:
             data = _extract_json_from_text(text)
         except ValueError as parse_err:
@@ -141,6 +117,64 @@ def _generate_structured(prompt: str) -> Dict[str, Any]:
         raise ValueError(f"AI service error: {str(e)}")
 
 
+def _truncate_for_context(text: str, max_chars: int = 800) -> str:
+    """Truncate text to fit within context window."""
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + f"...[truncated]"
+
+
+def _prepare_reputation_for_ai(reputation: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare reputation data for AI, extracting only essential malicious indicators."""
+    prepared = {}
+    
+    # Extract only URLs with issues
+    if "urls" in reputation:
+        suspicious_urls = {}
+        for url, data in list(reputation.get("urls", {}).items())[:5]:  # Limit to 5 URLs
+            if isinstance(data, dict):
+                has_vt_issue = data.get("virustotal_submit", {}).get("error") and "no_api_key" not in str(data.get("virustotal_submit"))
+                if has_vt_issue:
+                    suspicious_urls[url] = {"virustotal": data.get("virustotal_submit")}
+        if suspicious_urls:
+            prepared["suspicious_urls"] = suspicious_urls
+    
+    # Extract only domains with issues
+    if "domains" in reputation:
+        suspicious_domains = {}
+        for domain, data in list(reputation.get("domains", {}).items())[:3]:  # Limit to 3 domains
+            if isinstance(data, dict):
+                vt = data.get("virustotal", {})
+                if isinstance(vt, dict) and vt.get("error") and "no_api_key" not in str(vt):
+                    suspicious_domains[domain] = {"virustotal_error": vt.get("error")}
+        if suspicious_domains:
+            prepared["suspicious_domains"] = suspicious_domains
+    
+    return prepared if prepared else {"status": "no_suspicious_found"}
+
+
+def _prepare_parsed_for_ai(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare parsed email data for AI, truncating large fields to avoid context overflow."""
+    prepared = {
+        "from": parsed.get("headers", {}).get("From", "")[:100],
+        "to": parsed.get("headers", {}).get("To", "")[:50],
+        "subject": parsed.get("headers", {}).get("Subject", "")[:100],
+        "auth": {
+            "spf": parsed.get("spf"),
+            "dkim": parsed.get("dkim"),
+            "dmarc": parsed.get("dmarc"),
+        },
+        "indicators": {
+            "urls": parsed.get("urls", [])[:5],  
+            "emails": parsed.get("emails", [])[:3],  
+            "ips": parsed.get("ips", [])[:3],  
+            "domains": parsed.get("domains", [])[:3],  
+        },
+        "body_preview": _truncate_for_context(parsed.get("plain", ""), max_chars=600),
+    }
+    return prepared
+
+
 def analyze_parsed(parsed: Dict[str, Any], reputation: Dict[str, Any]) -> Dict[str, Any]:
     """Build a detailed prompt from parsed indicators and reputation results,
     call the model and return the structured JSON expected by the system:
@@ -153,20 +187,21 @@ def analyze_parsed(parsed: Dict[str, Any], reputation: Dict[str, Any]) -> Dict[s
       "reasoning": "..."
     }
     """
-    # Compose a concise prompt containing parsed and reputation summaries
-    prompt_lines = [
-        "You are an automated email security analyst.",
-        "Analyze the provided parsed email indicators and external reputation checks.",
-        "Respond ONLY with a JSON object EXACTLY matching the schema:",
-        "{\"is_phishing\": bool, \"confidence\": number(0-100), \"attack_type\": string, \"signals\": array, \"reasoning\": string}",
-        "Do not include any extra text.\n",
-        "Parsed indicators:\n",
-        json.dumps(parsed, ensure_ascii=False),
-        "\nReputation results:\n",
-        json.dumps(reputation, ensure_ascii=False),
-        "\nProvide the JSON now.",
-    ]
-    prompt = "\n".join(prompt_lines)
+    # Prepare data to avoid context window overflow
+    prepared_parsed = _prepare_parsed_for_ai(parsed)
+    prepared_reputation = _prepare_reputation_for_ai(reputation)
+    
+    # Build minimal prompt to save tokens
+    prompt = f"""Analyze this email for phishing. Return ONLY valid JSON.
+
+Email:
+{json.dumps(prepared_parsed, ensure_ascii=False)}
+
+Reputation:
+{json.dumps(prepared_reputation, ensure_ascii=False)}
+
+Return JSON with: is_phishing (bool), confidence (0-100), attack_type (string), signals (list), reasoning (string)"""
+
     data = _generate_structured(prompt)
 
     # Normalize expected fields

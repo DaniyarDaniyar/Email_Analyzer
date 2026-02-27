@@ -1,8 +1,8 @@
-import os
 import time
 from typing import Any, Dict, Optional
 
 import requests
+from decouple import config
 from django.core.cache import cache
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -18,9 +18,9 @@ class ReputationService:
     """
 
     def __init__(self, session: Optional[requests.Session] = None):
-        self.vt_key = os.getenv("VIRUSTOTAL_API_KEY")
-        self.abuse_key = os.getenv("ABUSEIPDB_API_KEY")
-        self.urlscan_key = os.getenv("URLSCAN_API_KEY")
+        self.vt_key = config("VIRUSTOTAL_API_KEY", default=None)
+        self.abuse_key = config("ABUSEIPDB_API_KEY", default=None)
+        self.urlscan_key = config("URLSCAN_API_KEY", default=None)
         self.session = session or requests.Session()
         retries = Retry(total=3, backoff_factor=1, status_forcelist=(429, 500, 502, 503, 504))
         self.session.mount("https://", HTTPAdapter(max_retries=retries))

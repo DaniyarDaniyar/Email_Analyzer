@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 from apps.detector.services.file_service import extract_text_from_pdf, extract_text_from_txt
 from apps.detector.models import DetectorResult
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
-from apps.users.models import CustomUser
 from apps.users.serializers import UserRegisterSerializer
 from apps.detector.services.parser import parse_email
 from apps.detector.services.analysis import build_reputation, compute_scores
@@ -88,7 +87,7 @@ def index(request):
             try:
                 pdf_path = generate_pdf(report, out_path)
                 pdf_url = os.path.join(getattr(settings, "MEDIA_URL", "/media/"), "reports", filename)
-            except Exception as e:
+            except Exception:
                 pass
 
             # save if authenticated

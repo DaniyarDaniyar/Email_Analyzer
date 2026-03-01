@@ -49,7 +49,16 @@ def build_reputation(parsed: Dict[str, Any], use_concurrency: bool = True) -> Di
 
 
 def compute_scores(parsed: Dict[str, Any], reputation: Dict[str, Any], ai_out: Dict[str, Any]) -> Dict[str, float]:
-    """Combine AI output, reputation and header anomalies into final scores."""
+    """Combine AI output, reputation and header anomalies into final scores.
+
+    The AI service returns a confidence score plus an ``is_phishing`` boolean.
+    ``confidence`` is treated as a measure of *maliciousness* only when the
+    model actually predicts a phishing/attack email.  Previously we ignored the
+    label and plugged the raw confidence straight into the weighted score, so
+    a benign message with 95% confidence would produce a very high final value.
+    The current implementation zeroes the AI contribution for safe mail, making
+    the ``final_score`` fall close to zero when everything looks good.
+    """
 
     def _is_malicious(rep: dict) -> bool:
         try:
@@ -105,7 +114,8 @@ def compute_scores(parsed: Dict[str, Any], reputation: Dict[str, Any], ai_out: D
                 anomalies += 1
     header_score = (anomalies / checks * 100) if checks > 0 else 0.0
 
-    final_score = ai_conf * 0.5 + malicious_ratio * 100 * 0.3 + header_score * 0.2
+    weighted_score = ai_conf * 0.6 + malicious_ratio * 100 * 0.2 + header_score * 0.2
+    final_score = max(weighted_score, ai_conf)
 
     return {
         "final_score": float(round(final_score, 2)),

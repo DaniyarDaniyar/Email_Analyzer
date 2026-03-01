@@ -76,6 +76,11 @@ Frontend usage
 How reports are produced and downloaded
 --------------------------------------
 - The analysis pipeline: parse input → extract IOCs → check reputations (VirusTotal/AbuseIPDB/URLScan) → aggregate → call AI (`analyze_parsed`) → compute final score → generate PDF via ReportLab.
+
+  The final score is a weighted combination of AI confidence, reputation results, and header
+  anomalies (SPF/DKIM/DMARC). You can tweak the relative importance by setting
+  `SCORE_AI_WEIGHT`, `SCORE_REPUTATION_WEIGHT` and `SCORE_HEADER_WEIGHT` in your
+  Django settings (defaults are 0.7/0.2/0.1 respectively).
 - Generated PDFs are saved to `MEDIA_ROOT/reports/` and attached to `DetectorResult.report_file`.
 - Download via the API endpoint `GET /api/detector/<id>/report/download/` which streams the PDF with `Content-Disposition: attachment`.
 

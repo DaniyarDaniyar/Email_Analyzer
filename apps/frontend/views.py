@@ -9,7 +9,7 @@ from django.core.files import File as DjangoFile
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 
 # Project modules
-from apps.detector.services.ai_service import analyze_parsed
+from apps.detector.services.ai_service import analyze_parsed, analyze_url
 from urllib.parse import urlparse
 from apps.detector.services.file_service import extract_text_from_pdf, extract_text_from_txt, extract_text_from_eml
 from apps.detector.models import DetectorResult
@@ -144,7 +144,7 @@ def index(request):
             reputation = build_reputation(parsed, use_concurrency=True)
 
             try:
-                ai_out = analyze_parsed(parsed, reputation)
+                ai_out = analyze_url(input_data, reputation)
             except Exception as e:
                 messages.error(request, f'AI analysis error: {e}')
                 return redirect('index')

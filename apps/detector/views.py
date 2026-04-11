@@ -32,7 +32,7 @@ from apps.detector.serializers import (
 )
 from apps.abstracts.paginators import AbstractPageNumberPaginator
 from apps.abstracts.mixins import DRFResponseMixin
-from apps.detector.services.ai_service import analyze_parsed
+from apps.detector.services.ai_service import analyze_parsed, analyze_url
 from urllib.parse import urlparse
 from apps.detector.services.file_service import extract_text_from_pdf, extract_text_from_txt, extract_text_from_eml
 from apps.detector.services.parser import parse_email
@@ -208,7 +208,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
             reputation = build_reputation(parsed, use_concurrency=True)
 
             try:
-                ai_out = analyze_parsed(parsed, reputation)
+                ai_out = analyze_url(input_data, reputation)
             except Exception as e:
                 return DRFResponse({"error": f"AI analysis error: {e}"}, status=HTTP_400_BAD_REQUEST)
 

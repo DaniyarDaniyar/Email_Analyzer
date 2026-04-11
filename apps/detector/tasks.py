@@ -10,9 +10,10 @@ from celery import shared_task
 # Project modules
 from apps.detector.models import DetectorResult
 from apps.detector.services.parser import parse_email
-from apps.detector.services.ai_service import analyze_parsed
+from apps.detector.services.ai_service import analyze_parsed, analyze_url
 from apps.detector.services.report import generate_pdf
 from apps.detector.services.analysis import build_reputation, compute_scores
+from urllib.parse import urlparse
 
 # Django modules
 from django.conf import settings
@@ -40,13 +41,21 @@ def analyze_email_task(self, detector_result_id: int) -> Dict[str, Any]:
         return {"error": "not_found"}
 
     # parse
-    parsed = parse_email(dr.input_data)
+    if dr.input_type == "url":
+        input_data = dr.input_data.strip()
+        parsed = {"urls": [input_data], "domains": [], "ips": []}
+        netloc = urlparse(input_data).netloc or input_data
+        domain = netloc.split(":")[0]
+        if domain:
+            parsed["domains"].append(domain)
+    else:
+        parsed = parse_email(dr.input_data)
 
     # reputation
     reputation = build_reputation(parsed, use_concurrency=False)
 
     # AI
-    ai_out = analyze_parsed(parsed, reputation)
+    ai_out = analyze_url(dr.input_data, reputation) if dr.input_type == "url" else analyze_parsed(parsed, reputation)
 
     # scoring (reuse same logic as views)
     scores = compute_scores(parsed, reputation, ai_out)

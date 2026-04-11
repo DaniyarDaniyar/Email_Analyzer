@@ -394,6 +394,23 @@ def _prepare_parsed_for_ai(parsed: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _prepare_url_for_ai(url: str, reputation: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract compact URL-centric data for AI analysis."""
+    from urllib.parse import urlparse
+
+    parsed_url = urlparse(url)
+    domain = parsed_url.hostname or ""
+
+    return {
+        "url": url,
+        "domain": domain,
+        "scheme": parsed_url.scheme,
+        "path": _truncate_for_context(parsed_url.path or "/", 500),
+        "query": _truncate_for_context(parsed_url.query or "", 500),
+        "reputation": _prepare_reputation_for_ai(reputation),
+    }
+
+
 def analyze_parsed(parsed: Dict[str, Any], reputation: Dict[str, Any]) -> Dict[str, Any]:
     """Analyze parsed email data and reputation indicators using AI to determine phishing likelihood."""
     prepared_parsed = _prepare_parsed_for_ai(parsed)
@@ -452,6 +469,73 @@ Return EXACTLY this JSON structure:
     attack_type = str(data.get("attack_type", "unknown"))
     
     normalized_confidence = _normalize_confidence(raw_confidence, attack_type, is_phishing_flag)
+
+    guarded = _apply_risk_guardrails(
+        parsed=parsed,
+        is_phishing=is_phishing_flag,
+        confidence=normalized_confidence,
+        attack_type=attack_type,
+        signals=data.get("signals", []),
+        reasoning=str(data.get("reasoning", "")),
+    )
+
+    return guarded
+
+
+def analyze_url(url: str, reputation: Dict[str, Any]) -> Dict[str, Any]:
+    """Analyze a URL using URL-specific phishing/scam/malware heuristics."""
+    prepared_url = _prepare_url_for_ai(url, reputation)
+
+    prompt = f"""
+# CONTEXT
+You are an AI cybersecurity system integrated into an automated URL threat detection pipeline.
+
+URL Data:
+{json.dumps(prepared_url, ensure_ascii=False)}
+
+# OBJECTIVE
+Analyze the URL and determine the threat level. Classify the attack type carefully:
+
+ATTACK TYPES:
+- "phishing": Credential-harvesting or login impersonation URLs
+- "spoofing": Domain impersonation, typosquatting, brand abuse, or misleading subdomains
+- "malware": URLs that deliver payloads, exploits, drive-by downloads, or malicious redirects
+- "scam": Fraudulent payment pages, fake giveaways, investment scams, or impersonation scams
+- "benign": Legitimate URL with no security concerns
+
+Provide a confidence score (0-100) based on:
+- Domain and URL reputation data
+- Suspicious URL structure, path, and query patterns
+- Brand impersonation and typosquatting signals
+- Redirect or submission indicators
+- Any technical indicators from reputation services
+
+IMPORTANT:
+- Do not describe this as an email analysis.
+- Focus only on the URL and its reputation/structure.
+- If reputation data is missing, still assess the URL structure conservatively.
+
+# RESPONSE FORMAT
+Return EXACTLY this JSON structure:
+
+{{
+  "is_phishing": true or false,
+  "confidence": integer between 0 and 100,
+  "attack_type": "phishing" | "spoofing" | "malware" | "scam" | "benign" | etc,
+  "signals": ["list of detected technical indicators"],
+  "reasoning": "concise technical explanation"
+}}
+"""
+
+    data = _generate_structured(prompt)
+
+    is_phishing_flag = bool(data.get("is_phishing", False))
+    raw_confidence = _safe_int(data.get("confidence", 0), 0)
+    attack_type = str(data.get("attack_type", "unknown"))
+
+    normalized_confidence = _normalize_confidence(raw_confidence, attack_type, is_phishing_flag)
+
+    parsed = {"urls": [url], "domains": [prepared_url.get("domain", "")], "headers": {}}
 
     guarded = _apply_risk_guardrails(
         parsed=parsed,

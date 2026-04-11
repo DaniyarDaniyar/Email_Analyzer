@@ -9,10 +9,19 @@ if not ALLOWED_HOSTS:
 if "*" in ALLOWED_HOSTS:
     raise ValueError("Wildcard '*' is not allowed in ALLOWED_HOSTS for production.")
 
+_DB_ENGINE = config("DB_ENGINE", default="")
+_DB_NAME = config("DB_NAME", default="")
+if not _DB_ENGINE:
+    raise ValueError("DB_ENGINE must be set in production.")
+if _DB_ENGINE == "django.db.backends.sqlite3":
+    raise ValueError("SQLite is not allowed as the database engine in production.")
+if not _DB_NAME:
+    raise ValueError("DB_NAME must be set in production.")
+
 DATABASES = {
     "default": {
-        "ENGINE": config("DB_ENGINE", default="django.db.backends.sqlite3"),
-        "NAME": config("DB_NAME", default="db.sqlite3"),
+        "ENGINE": _DB_ENGINE,
+        "NAME": _DB_NAME,
     }
 }
 

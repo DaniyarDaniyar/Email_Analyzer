@@ -1,5 +1,7 @@
 #Python modules
 from typing import Any
+import logging
+from uuid import uuid4
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 #Django_modeul
@@ -21,6 +23,7 @@ from rest_framework.status import (
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 
+# Project modules
 from apps.detector.models import DetectorResult
 from apps.detector.serializers import (
     DetectorResultListSerializer,
@@ -31,15 +34,17 @@ from apps.abstracts.paginators import AbstractPageNumberPaginator
 from apps.abstracts.mixins import DRFResponseMixin
 from apps.detector.services.ai_service import analyze_parsed
 from urllib.parse import urlparse
-from apps.detector.services.file_service import extract_text_from_pdf, extract_text_from_txt
+from apps.detector.services.file_service import extract_text_from_pdf, extract_text_from_txt, extract_text_from_eml
 from apps.detector.services.parser import parse_email
 from apps.detector.services.analysis import build_reputation, compute_scores
 from apps.detector.services.report import generate_pdf
 from django.conf import settings
 import os
-import time
 from django.core.files import File as DjangoFile
 from apps.detector.tasks import analyze_email_task
+
+
+logger = logging.getLogger(__name__)
 
 
 class DetectorViewSet(ViewSet, DRFResponseMixin):
@@ -64,7 +69,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
     def scan(self, request: DRFRequest, *args: tuple[Any, ...], **kwargs: dict[str, Any]) -> DRFResponse:
         """
         Public endpoint to scan email, URL, or file. Saves result to authenticated user if provided.
-        Supports: text, url, PDF/TXT file upload.
+        Supports: text, url, PDF/TXT/EML file upload.
         """
         serializer = ScanRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -80,9 +85,12 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                 input_data = serializer.validated_data["input_data"]
             elif input_type == "file":
                 file_obj = serializer.validated_data["file"]
-                # Extract text from PDF or read TXT
-                if str(file_obj.name).lower().endswith(".pdf"):
+                lower_name = str(file_obj.name).lower()
+                # Extract text from PDF, read TXT, or preserve raw RFC822 EML content.
+                if lower_name.endswith(".pdf"):
                     input_data = extract_text_from_pdf(file_obj)
+                elif lower_name.endswith(".eml"):
+                    input_data = extract_text_from_eml(file_obj)
                 else:  # .txt
                     input_data = extract_text_from_txt(file_obj)
             else:
@@ -143,13 +151,14 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
 
             # Save PDF to media/reports
             media_root = getattr(settings, "MEDIA_ROOT", "media") or "media"
-            filename = f"report_{int(time.time())}.pdf"
+            filename = f"report_{uuid4().hex}.pdf"
             out_dir = os.path.join(media_root, "reports")
             out_path = os.path.join(out_dir, filename)
             try:
                 pdf_path = generate_pdf(report, out_path)
                 pdf_url = os.path.join(getattr(settings, "MEDIA_URL", "/media/"), "reports", filename)
-            except Exception as e:
+            except Exception:
+                logger.exception("Failed to generate PDF report for input_type=%s", input_type)
                 pdf_path = None
                 pdf_url = None
 
@@ -171,8 +180,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                             django_file = DjangoFile(f)
                             detector_result.report_file.save(filename, django_file, save=True)
                     except Exception:
-                        # ignore file save failures but log in future (kept simple here)
-                        pass
+                        logger.exception("Failed to attach PDF report to detector_result_id=%s", detector_result.id)
 
             response_data = {
                 "classification": "phishing" if ai_out.get("is_phishing") else "benign",
@@ -204,9 +212,33 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
             except Exception as e:
                 return DRFResponse({"error": f"AI analysis error: {e}"}, status=HTTP_400_BAD_REQUEST)
 
+            scores = compute_scores(parsed, reputation, ai_out)
+            final_score = scores["final_score"]
+
+            report = {
+                "title": "Email Analysis Report",
+                "summary": f"Final score: {final_score:.2f}",
+                "parsed": parsed,
+                "reputation": reputation,
+                "ai": ai_out,
+                "scoring": scores,
+            }
+
+            media_root = getattr(settings, "MEDIA_ROOT", "media") or "media"
+            filename = f"report_{uuid4().hex}.pdf"
+            out_dir = os.path.join(media_root, "reports")
+            out_path = os.path.join(out_dir, filename)
+            try:
+                pdf_path = generate_pdf(report, out_path)
+                pdf_url = os.path.join(getattr(settings, "MEDIA_URL", "/media/"), "reports", filename)
+            except Exception:
+                logger.exception("Failed to generate URL-scan PDF report")
+                pdf_path = None
+                pdf_url = None
+
             result = {
                 "classification": "phishing" if ai_out.get("is_phishing") else "benign",
-                "score": ai_out.get("confidence", 0),
+                "score": round(final_score, 2),
                 "explanation": ai_out.get("reasoning", ai_out.get("explanation", "")),
             }
 
@@ -220,6 +252,13 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                     explanation=result.get("explanation"),
                     is_safe=result.get("classification") == "benign",
                 )
+                if pdf_path and os.path.exists(pdf_path):
+                    try:
+                        with open(pdf_path, "rb") as f:
+                            django_file = DjangoFile(f)
+                            detector_result.report_file.save(filename, django_file, save=True)
+                    except Exception:
+                        logger.exception("Failed to attach URL-scan PDF report to detector_result_id=%s", detector_result.id)
 
             response_data = {
                 "classification": result.get("classification"),
@@ -227,6 +266,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
                 "explanation": result.get("explanation"),
                 "saved": detector_result is not None,
                 "result_id": detector_result.id if detector_result else None,
+                "report_url": pdf_url,
             }
             return DRFResponse(response_data, status=HTTP_201_CREATED)
 

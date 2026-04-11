@@ -1,5 +1,5 @@
-from decouple import config
 from datetime import timedelta
+from decouple import config
 # --------------------------------------------
 # Env
 # --------------------------------------------
@@ -11,8 +11,16 @@ ENV_POSSIBLE_OPTIONS = [
 ENV_ID = config(
     "PROJECT_ENV_ID",
     cast=str,
+    default="local",
 )
-SECRET_KEY = 'MY_SUPER_SECRET_KEY'
+
+if ENV_ID == "prod":
+    SECRET_KEY = config("SECRET_KEY")
+else:
+    SECRET_KEY = config(
+        "SECRET_KEY",
+        default="local-dev-only-not-for-production-7e5f9c3b4a1d2e8f6c0b9a4d3f1e7c6b5a2d9f8e1c4b7a0",
+    )
 
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),

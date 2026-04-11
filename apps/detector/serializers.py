@@ -1,12 +1,14 @@
+# Rest Framework modules
 from rest_framework import serializers
 
+# Project modules
 from apps.detector.models import DetectorResult
 
 
 class ScanRequestSerializer(serializers.Serializer):
     """Serializer for scan request (text, URL, or file upload)."""
 
-    INPUT_CHOICES = (("text", "Email/text"), ("url", "URL"), ("file", "PDF/TXT file"))
+    INPUT_CHOICES = (("text", "Email/text"), ("url", "URL"), ("file", "PDF/TXT/EML file"))
     
     input_type = serializers.ChoiceField(choices=INPUT_CHOICES)
     input_data = serializers.CharField(max_length=5000, min_length=1, required=False, allow_blank=True)
@@ -22,9 +24,9 @@ class ScanRequestSerializer(serializers.Serializer):
             if not file_obj:
                 raise serializers.ValidationError("File is required when input_type is 'file'")
             # Validate file extension
-            allowed_extensions = (".pdf", ".txt")
+            allowed_extensions = (".pdf", ".txt", ".eml")
             if not any(str(file_obj.name).lower().endswith(ext) for ext in allowed_extensions):
-                raise serializers.ValidationError("Only PDF and TXT files are allowed")
+                raise serializers.ValidationError("Only PDF, TXT and EML files are allowed")
             if file_obj.size > 10 * 1024 * 1024:  # 10MB limit
                 raise serializers.ValidationError("File size must not exceed 10MB")
         else:

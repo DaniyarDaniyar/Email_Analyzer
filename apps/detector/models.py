@@ -1,6 +1,8 @@
+# Django modules
 from django.conf import settings
 from django.db import models
 
+# Project modules
 from apps.abstracts.models import AbstractBaseModel
 
 
@@ -30,7 +32,9 @@ class DetectorResult(AbstractBaseModel):
     report_file = models.FileField(upload_to="reports/", null=True, blank=True)
 
     class Meta:
+        """Meta options for DetectorResult model."""
         ordering = ("-created_at",)
 
     def __str__(self) -> str:
+        """String representation of the model instance."""
         return f"DetectorResult(id={self.id}, user_id={self.user_id}, score={self.score})"

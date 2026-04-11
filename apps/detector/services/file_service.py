@@ -1,3 +1,4 @@
+# Projct modules
 import PyPDF2
 
 
@@ -61,3 +62,31 @@ def extract_text_from_txt(file) -> str:
         return text
     except Exception as e:
         raise ValueError(f"Failed to extract text from TXT: {e}")
+
+
+def extract_text_from_eml(file) -> str:
+    """Extract raw RFC822 content from an EML file.
+
+    Args:
+        file: A file-like object (Django UploadedFile or similar)
+
+    Returns:
+        EML content decoded to text for downstream email parsing
+
+    Raises:
+        ValueError: If EML cannot be read
+    """
+    try:
+        content = file.read()
+        if isinstance(content, bytes):
+            text = content.decode("utf-8", errors="replace")
+        else:
+            text = str(content)
+
+        text = text.strip()
+        if not text:
+            raise ValueError("EML file is empty")
+
+        return text
+    except Exception as e:
+        raise ValueError(f"Failed to extract text from EML: {e}")

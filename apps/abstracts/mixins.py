@@ -32,6 +32,7 @@ class DRFResponseMixin:
         serializer_context: Optional[dict[str, Any]] = None,
         status_code: int = HTTP_200_OK,
     ) -> DRFResponse:
+        """Get DRF response with pagination if paginator is provided."""
         if not serializer_context:
             serializer_context = {"request": request}
         if paginator and many:

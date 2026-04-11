@@ -14,9 +14,11 @@ from rest_framework.decorators import action
 # Project modules
 from apps.users.models import CustomUser
 from apps.users.serializers import HTTP405MethodNotAllowedSerializer, UserRegisterSerializer
+from apps.abstracts.mixins import DRFResponseMixin
 
 
-class CustomUserViewSet(ViewSet):
+class CustomUserViewSet(ViewSet, DRFResponseMixin):
+    """ViewSet for handling user registration and related actions."""
     permission_classes = (AllowAny,)
     @extend_schema(
         summary="User Registration",

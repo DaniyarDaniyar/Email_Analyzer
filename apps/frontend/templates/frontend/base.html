@@ -1,40 +1,141 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Email Detector</title>
-  {% load static %}
-  <link rel="stylesheet" href="{% static 'frontend/styles.css' %}">
+  <title>{% block title %}EmailGuard AI{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #08080f;
+      color: #fff;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .font-display { font-family: 'Sora', sans-serif; }
+    .glass {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(10px);
+    }
+    .btn-glow {
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+    .btn-glow:hover {
+      transform: scale(1.04);
+      box-shadow: 0 0 24px rgba(34, 211, 238, 0.5);
+    }
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s ease, transform 0.6s ease;
+    }
+    .reveal.in-view {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .bg-orb {
+      position: fixed;
+      pointer-events: none;
+      z-index: 0;
+      border-radius: 9999px;
+      filter: blur(70px);
+      opacity: 0.35;
+      animation: drift 10s ease-in-out infinite;
+    }
+    .bg-orb.a {
+      top: 4rem;
+      left: -3rem;
+      width: 220px;
+      height: 220px;
+      background: #22d3ee;
+    }
+    .bg-orb.b {
+      top: 35%;
+      right: -4rem;
+      width: 280px;
+      height: 280px;
+      background: #06b6d4;
+      animation-duration: 13s;
+    }
+    .bg-orb.c {
+      bottom: 2rem;
+      left: 35%;
+      width: 180px;
+      height: 180px;
+      background: #0ea5e9;
+      animation-duration: 8s;
+    }
+    @keyframes drift {
+      0% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(12px, -20px) scale(1.08); }
+      100% { transform: translate(0, 0) scale(1); }
+    }
+  </style>
 </head>
 <body>
-  <main class="container">
-    <header>
-      <h1><a href="{% url 'index' %}">Email Detector</a></h1>
-      <nav>
-        {% if user.is_authenticated %}
-          <a href="{% url 'history' %}">History</a>
-          <a href="{% url 'logout' %}">Logout</a>
-        {% else %}
-          <a href="{% url 'login' %}">Login</a>
-          <a href="{% url 'register' %}">Register</a>
-        {% endif %}
-      </nav>
+  <div class="bg-orb a"></div>
+  <div class="bg-orb b"></div>
+  <div class="bg-orb c"></div>
+
+  <div class="relative z-10 min-h-screen flex flex-col">
+    <header class="sticky top-0 z-20 border-b border-white/10 bg-[#080b14]/75 backdrop-blur-xl">
+      <div class="mx-auto flex w-full max-w-7xl items-center justify-between px-5 py-4 md:px-8">
+        <a href="{% url 'index' %}" class="font-display text-xl font-bold tracking-tight text-cyan-200">EmailGuard AI</a>
+        <nav class="flex items-center gap-2 sm:gap-3">
+          <a href="{% url 'index' %}" class="rounded-xl px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-cyan-200">Главная</a>
+          {% if user.is_authenticated %}
+            <a href="{% url 'history' %}" class="rounded-xl px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-cyan-200">История</a>
+            <a href="{% url 'logout' %}" class="btn-glow rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 px-4 py-2 text-sm font-semibold text-[#031116]">Выход</a>
+          {% else %}
+            <a href="{% url 'login' %}" class="rounded-xl px-3 py-2 text-sm text-white/80 transition hover:bg-white/10 hover:text-cyan-200">Вход</a>
+            <a href="{% url 'register' %}" class="btn-glow rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 px-4 py-2 text-sm font-semibold text-[#031116]">Регистрация</a>
+          {% endif %}
+        </nav>
+      </div>
     </header>
 
-    {% if messages %}
-      <ul class="messages">
-        {% for m in messages %}
-          <li class="msg {{ m.tags }}">{{ m }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
+    <main class="mx-auto w-full max-w-7xl flex-1 px-5 py-8 md:px-8 md:py-10">
+      {% if messages %}
+        <ul class="mb-6 space-y-3">
+          {% for m in messages %}
+            <li class="reveal glass rounded-xl px-4 py-3 text-sm {% if m.tags == 'error' %}border-red-400/40 bg-red-500/15 text-red-100{% elif m.tags == 'success' %}border-emerald-400/40 bg-emerald-500/15 text-emerald-100{% else %}text-white/85{% endif %}" data-reveal>
+              {{ m }}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
 
-    {% block content %}{% endblock %}
+      {% block content %}{% endblock %}
+    </main>
 
-    <footer>
-      <small>Server-side MVC frontend — backend on same host</small>
+    <footer class="border-t border-white/10 px-5 py-5 md:px-8">
+      <div class="mx-auto flex w-full max-w-7xl flex-col items-start justify-between gap-3 text-xs text-white/60 sm:flex-row sm:items-center">
+        <small>Server-side MVC frontend with modern UI layer</small>
+        <small>© 2026 EmailGuard AI</small>
+      </div>
     </footer>
-  </main>
+  </div>
+
+  <script>
+    (function () {
+      const observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('in-view');
+          }
+        });
+      }, { threshold: 0.12 });
+
+      document.querySelectorAll('[data-reveal]').forEach(function (el) {
+        observer.observe(el);
+      });
+    })();
+  </script>
 </body>
 </html>

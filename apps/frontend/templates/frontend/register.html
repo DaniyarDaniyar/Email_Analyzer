@@ -1,29 +1,40 @@
 {% extends 'frontend/base.html' %}
 
+{% block title %}Регистрация | EmailGuard AI{% endblock %}
+
 {% block content %}
-<section class="card">
-  <h2>Register</h2>
-  <form method="post">
+<section class="reveal mx-auto max-w-2xl rounded-3xl border border-white/15 bg-white/5 p-6 backdrop-blur-xl md:p-8" data-reveal>
+  <p class="text-sm uppercase tracking-[0.2em] text-cyan-300/85">Новый аккаунт</p>
+  <h2 class="font-display mt-2 text-3xl font-bold md:text-4xl">Регистрация</h2>
+  <p class="mt-2 text-sm text-white/70">Создайте профиль и получите доступ к AI-анализу писем и отчётам.</p>
+
+  <form method="post" class="mt-8 grid gap-4 md:grid-cols-2">
     {% csrf_token %}
-    <label>Email
-      <input name="email" placeholder="Email" required />
+    <label class="block text-sm text-white/80 md:col-span-2">Email
+      <input name="email" placeholder="Email" required class="mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0e1422]/85 px-4 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-cyan-300/50" />
     </label>
-    <label>Username
-      <input name="username" placeholder="Username" required />
+    <label class="block text-sm text-white/80 md:col-span-2">Username
+      <input name="username" placeholder="Username" required class="mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0e1422]/85 px-4 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-cyan-300/50" />
     </label>
-    <label>First name
-      <input name="first_name" placeholder="First name" />
+    <label class="block text-sm text-white/80">Имя
+      <input name="first_name" placeholder="First name" class="mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0e1422]/85 px-4 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-cyan-300/50" />
     </label>
-    <label>Last name
-      <input name="last_name" placeholder="Last name" />
+    <label class="block text-sm text-white/80">Фамилия
+      <input name="last_name" placeholder="Last name" class="mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0e1422]/85 px-4 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-cyan-300/50" />
     </label>
-    <label>Password
-      <input name="password" type="password" required />
+    <label class="block text-sm text-white/80">Пароль
+      <input name="password" type="password" required class="mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0e1422]/85 px-4 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-cyan-300/50" />
     </label>
-    <label>Confirm Password
-      <input name="password2" type="password" required />
+    <label class="block text-sm text-white/80">Подтвердите пароль
+      <input name="password2" type="password" required class="mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0e1422]/85 px-4 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-cyan-300/50" />
     </label>
-    <button type="submit">Register</button>
+
+    <button type="submit" class="btn-glow min-h-[44px] rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 px-5 py-3 font-semibold text-[#021116] md:col-span-2">Зарегистрироваться</button>
   </form>
+
+  <p class="mt-5 text-sm text-white/70">
+    Уже есть аккаунт?
+    <a href="{% url 'login' %}" class="font-medium text-cyan-200 hover:text-cyan-100">Войти</a>
+  </p>
 </section>
 {% endblock %}

@@ -1,71 +1,151 @@
 {% extends 'frontend/base.html' %}
 
-{% block content %}
-<section class="card">
-  <h2>Scan</h2>
-  <form id="scan-form" method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    <label>Input type
-      <select name="input_type">
-        <option value="text">Text</option>
-        <option value="url">URL</option>
-        <option value="file">File (pdf/txt/eml)</option>
-      </select>
-    </label>
-    <label id="input-data-label">Text / URL
-      <textarea name="input_data" rows="6" placeholder="Paste email content, URL, or text to analyze..."></textarea>
-    </label>
-    <label id="file-label" style="display:none">File
-      <input type="file" name="file" accept=".pdf,.txt,.eml" />
-    </label>
-    <div style="display:flex;gap:8px">
-      <button type="submit" id="scan-btn">Scan</button>
-      <div id="loading-spinner" style="display:none;align-items:center">Analyzing...</div>
-    </div>
-  </form>
+{% block title %}Сканер | EmailGuard AI{% endblock %}
 
-  {% if result %}
-    <div class="result-box {% if result.classification == 'malicious' %}malicious{% else %}benign{% endif %}">
-      <h3 style="margin-top:0">Scan Result</h3>
-      <div class="result-item">
-        <strong>Classification:</strong> <span class="badge">{{ result.classification|upper }}</span>
+{% block content %}
+<section class="reveal relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-cyan-500/20 via-[#09111f] to-[#08080f] p-6 md:p-10" data-reveal>
+  <div class="absolute -left-8 top-8 h-32 w-32 rounded-full bg-cyan-300/20 blur-3xl"></div>
+  <div class="absolute right-0 top-0 h-40 w-40 rounded-full bg-sky-400/15 blur-3xl"></div>
+
+  <div class="relative grid gap-8 lg:grid-cols-2 lg:items-center">
+    <div>
+      <p class="text-xs uppercase tracking-[0.2em] text-cyan-200/85">Phishing Detection</p>
+      <h1 class="font-display mt-3 text-3xl font-extrabold leading-tight md:text-5xl">
+        Проверка писем, ссылок и файлов
+        <span class="bg-gradient-to-r from-cyan-200 via-teal-200 to-sky-300 bg-clip-text text-transparent"> в одном окне</span>
+      </h1>
+      <p class="mt-4 max-w-xl text-sm text-white/75 md:text-base">
+        Запустите скан за несколько секунд: вставьте текст письма, URL или загрузите файл .txt/.pdf/.eml.
+        После анализа вы получите риск-скор, объяснение и PDF-отчёт.
+      </p>
+      <div class="mt-6 flex flex-wrap gap-3">
+        <a href="#scan" class="btn-glow inline-flex min-h-[44px] items-center rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 px-5 py-2.5 text-sm font-semibold text-[#031116]">Начать скан</a>
+        {% if user.is_authenticated %}
+          <a href="{% url 'history' %}" class="btn-glow inline-flex min-h-[44px] items-center rounded-xl border border-white/20 bg-white/5 px-5 py-2.5 text-sm text-white/85">Открыть историю</a>
+        {% else %}
+          <a href="{% url 'register' %}" class="btn-glow inline-flex min-h-[44px] items-center rounded-xl border border-white/20 bg-white/5 px-5 py-2.5 text-sm text-white/85">Создать аккаунт</a>
+        {% endif %}
       </div>
-      <div class="result-item">
-        <strong>Risk Score:</strong> <span class="score-value">{{ result.score }}/100</span>
-      </div>
-      <div class="result-item">
-        <strong>Analysis:</strong> {{ result.explanation }}
-      </div>
-      {% if result.report_url %}
-        <div class="result-item" style="margin-top:12px">
-          <a href="{{ result.report_url }}" target="_blank" class="btn-secondary">Download PDF Report</a>
-        </div>
-      {% endif %}
-      {% if result.saved %}<p style="color:#059669;margin-top:8px"><strong>✓ Saved to your history</strong></p>{% endif %}
     </div>
-  {% endif %}
+
+    <div class="glass rounded-2xl p-5 md:p-6">
+      <p class="text-xs uppercase tracking-wider text-cyan-200/85">Что доступно</p>
+      <ul class="mt-4 space-y-3 text-sm text-white/80">
+        <li class="rounded-xl border border-white/10 bg-[#0e1422]/70 px-4 py-3">Сканирование текста писем</li>
+        <li class="rounded-xl border border-white/10 bg-[#0e1422]/70 px-4 py-3">Проверка URL на фишинг и репутацию</li>
+        <li class="rounded-xl border border-white/10 bg-[#0e1422]/70 px-4 py-3">Загрузка файлов .pdf / .txt / .eml</li>
+        <li class="rounded-xl border border-white/10 bg-[#0e1422]/70 px-4 py-3">Сохранение истории и PDF-отчёты</li>
+      </ul>
+    </div>
+  </div>
 </section>
 
+<section id="scan" class="reveal mt-8 rounded-3xl border border-white/15 bg-white/5 p-6 backdrop-blur-xl md:p-8" data-reveal>
+  <div class="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+    <div>
+      <h2 class="font-display text-2xl font-bold md:text-3xl">Сканирование</h2>
+      <p class="mt-1 text-sm text-white/70">Выберите тип ввода и отправьте данные на анализ.</p>
+    </div>
+    <div class="rounded-xl border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs text-cyan-100">
+      Поддерживаются: text, url, file
+    </div>
+  </div>
+
+  <form id="scan-form" method="post" enctype="multipart/form-data" class="grid gap-4">
+    {% csrf_token %}
+
+    <label class="block text-sm text-white/80">Тип ввода
+      <select name="input_type" id="input-type" class="mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0f1628]/85 px-4 text-white focus:outline-none focus:ring-2 focus:ring-cyan-300/50">
+        <option value="text">Text</option>
+        <option value="url">URL</option>
+        <option value="file">File (.pdf/.txt/.eml)</option>
+      </select>
+    </label>
+
+    <label id="input-data-label" class="block text-sm text-white/80">Текст / URL
+      <textarea name="input_data" rows="8" placeholder="Вставьте email content или URL для анализа..." class="mt-2 w-full rounded-xl border border-white/15 bg-[#0f1628]/85 px-4 py-3 text-white placeholder:text-white/45 focus:outline-none focus:ring-2 focus:ring-cyan-300/50"></textarea>
+    </label>
+
+    <label id="file-label" class="hidden block text-sm text-white/80">Файл
+      <input type="file" name="file" accept=".pdf,.txt,.eml" class="mt-2 min-h-[44px] w-full rounded-xl border border-white/15 bg-[#0f1628]/85 px-4 py-2 text-white file:mr-3 file:rounded-lg file:border-0 file:bg-cyan-500 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-[#041017]" />
+    </label>
+
+    <div class="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <button type="submit" id="scan-btn" class="btn-glow min-h-[44px] rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 px-5 py-2.5 text-sm font-semibold text-[#031116]">Сканировать</button>
+      <div id="loading-spinner" class="hidden min-h-[44px] items-center rounded-xl border border-white/15 bg-white/5 px-4 text-sm text-white/75">Анализируем данные...</div>
+    </div>
+  </form>
+</section>
+
+{% if result %}
+<section class="reveal mt-8 rounded-3xl border {% if result.classification == 'phishing' or result.classification == 'malicious' %}border-red-400/40 bg-red-500/10{% else %}border-emerald-400/40 bg-emerald-500/10{% endif %} p-6 backdrop-blur-xl md:p-8" data-reveal>
+  <h3 class="font-display text-2xl font-bold">Результат сканирования</h3>
+
+  <div class="mt-5 grid gap-4 md:grid-cols-3">
+    <article class="rounded-xl border border-white/15 bg-[#0f1628]/75 p-4">
+      <p class="text-xs uppercase tracking-wide text-white/55">Классификация</p>
+      <p class="mt-2 text-lg font-semibold {% if result.classification == 'phishing' or result.classification == 'malicious' %}text-red-200{% else %}text-emerald-200{% endif %}">
+        {{ result.classification|upper }}
+      </p>
+    </article>
+
+    <article class="rounded-xl border border-white/15 bg-[#0f1628]/75 p-4">
+      <p class="text-xs uppercase tracking-wide text-white/55">Risk Score</p>
+      <p class="mt-2 text-lg font-semibold text-cyan-200">{{ result.score }}/100</p>
+    </article>
+
+    <article class="rounded-xl border border-white/15 bg-[#0f1628]/75 p-4">
+      <p class="text-xs uppercase tracking-wide text-white/55">Сохранение</p>
+      <p class="mt-2 text-sm {% if result.saved %}text-emerald-200{% else %}text-white/80{% endif %}">
+        {% if result.saved %}Сохранено в истории{% else %}Гостевой режим{% endif %}
+      </p>
+    </article>
+  </div>
+
+  <article class="mt-4 rounded-xl border border-white/15 bg-[#0f1628]/75 p-4">
+    <p class="text-xs uppercase tracking-wide text-white/55">Анализ</p>
+    <p class="mt-2 text-sm leading-relaxed text-white/80">{{ result.explanation }}</p>
+  </article>
+
+  <div class="mt-5 flex flex-wrap gap-3">
+    {% if result.report_url %}
+      <a href="{{ result.report_url }}" target="_blank" class="btn-glow inline-flex min-h-[44px] items-center rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 px-5 py-2.5 text-sm font-semibold text-[#031116]">Скачать PDF отчёт</a>
+    {% endif %}
+
+    {% if user.is_authenticated %}
+      <a href="{% url 'history' %}" class="btn-glow inline-flex min-h-[44px] items-center rounded-xl border border-white/20 bg-white/5 px-5 py-2.5 text-sm text-white/85">Перейти в историю</a>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
 <script>
-(function(){
-  const sel = document.querySelector('select[name="input_type"]');
+(function () {
+  const sel = document.getElementById('input-type');
   const dataLabel = document.getElementById('input-data-label');
   const fileLabel = document.getElementById('file-label');
   const form = document.getElementById('scan-form');
   const btn = document.getElementById('scan-btn');
   const spinner = document.getElementById('loading-spinner');
 
-  sel.addEventListener('change', function(e){
-    const v = e.target.value;
-    dataLabel.style.display = (v==='file') ? 'none' : 'block';
-    fileLabel.style.display = (v==='file') ? 'block' : 'none';
-  });
+  if (!sel || !dataLabel || !fileLabel || !form || !btn || !spinner) return;
 
-  form.addEventListener('submit', function(){
+  function toggleInputMode() {
+    const v = sel.value;
+    const isFile = v === 'file';
+    dataLabel.classList.toggle('hidden', isFile);
+    fileLabel.classList.toggle('hidden', !isFile);
+  }
+
+  sel.addEventListener('change', toggleInputMode);
+  toggleInputMode();
+
+  form.addEventListener('submit', function () {
     btn.disabled = true;
-    spinner.style.display = 'flex';
+    btn.classList.add('opacity-70');
+    spinner.classList.remove('hidden');
+    spinner.classList.add('inline-flex');
   });
 })();
 </script>
-
 {% endblock %}

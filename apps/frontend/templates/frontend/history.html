@@ -1,34 +1,63 @@
 {% extends 'frontend/base.html' %}
 
+{% block title %}История сканов | EmailGuard AI{% endblock %}
+
 {% block content %}
-<section class="card">
-  <h2>Your history</h2>
-  <ul>
+<section class="reveal" data-reveal>
+  <div class="mb-6">
+    <p class="text-sm uppercase tracking-[0.2em] text-cyan-300/85">Dashboard</p>
+    <h2 class="font-display mt-2 text-3xl font-bold md:text-4xl">История сканов</h2>
+    <p class="mt-2 text-sm text-white/70">Смотрите результаты анализа, риск-скор и загружайте отчёты.</p>
+  </div>
+
+  <div class="space-y-4">
     {% for it in items %}
-      <li>
-        {{ forloop.counter0|add:start_index }}.
-        <strong>{{ it.input_type }}</strong>
-        — {{ it.input_data|truncatechars:200 }}
-        — score {{ it.score|floatformat:2 }}
-        — {{ it.is_safe|yesno:"safe,malicious" }}
-        — {{ it.created_at|date:"M. d, Y, g:i a" }}
-        {% if it.report_file %}
-          — <a href="{% url 'detector-download-report' pk=it.id %}" class="link-inline">Report</a>
-        {% endif %}
-      </li>
+      <article class="reveal rounded-2xl border border-white/15 bg-white/5 p-5 backdrop-blur-xl" data-reveal>
+        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full border border-cyan-300/35 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-200">#{{ forloop.counter0|add:start_index }}</span>
+              <span class="rounded-full border border-white/20 px-3 py-1 text-xs text-white/85">{{ it.input_type|upper }}</span>
+              {% if it.is_safe %}
+                <span class="rounded-full border border-emerald-300/35 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-200">SAFE</span>
+              {% else %}
+                <span class="rounded-full border border-red-300/35 bg-red-300/10 px-3 py-1 text-xs text-red-200">MALICIOUS</span>
+              {% endif %}
+            </div>
+            <p class="text-sm leading-relaxed text-white/80">{{ it.input_data|truncatechars:220 }}</p>
+            <p class="text-xs text-white/55">{{ it.created_at|date:"M. d, Y, g:i a" }}</p>
+          </div>
+
+          <div class="min-w-[180px] rounded-xl border border-white/10 bg-[#0c1421]/75 p-4">
+            <p class="text-xs uppercase tracking-wide text-white/55">Risk Score</p>
+            <p class="font-display mt-1 text-3xl font-bold text-cyan-200">{{ it.score|floatformat:2 }}</p>
+            {% if it.report_file %}
+              <a href="{% url 'detector-download-report' pk=it.id %}" class="btn-glow mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 px-4 py-2 text-sm font-semibold text-[#021116]">Скачать Report</a>
+            {% endif %}
+          </div>
+        </div>
+      </article>
     {% empty %}
-      <li>No results yet.</li>
+      <article class="rounded-2xl border border-white/15 bg-white/5 p-6 text-sm text-white/75 backdrop-blur-xl">
+        Результатов пока нет. Выполните первый скан на главной странице.
+      </article>
     {% endfor %}
-  </ul>
+  </div>
 
   {% if is_paginated %}
-    <nav class="pagination">
+    <nav class="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 p-4">
       {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+        <a href="?page={{ page_obj.previous_page_number }}" class="btn-glow min-h-[44px] rounded-xl border border-white/20 px-4 py-2 text-sm text-white/85">← Previous</a>
+      {% else %}
+        <span class="min-h-[44px] rounded-xl border border-white/10 px-4 py-2 text-sm text-white/35">← Previous</span>
       {% endif %}
-      <span>Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
+
+      <span class="text-sm text-white/70">Page {{ page_obj.number }} of {{ paginator.num_pages }}</span>
+
       {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}">Next</a>
+        <a href="?page={{ page_obj.next_page_number }}" class="btn-glow min-h-[44px] rounded-xl border border-white/20 px-4 py-2 text-sm text-white/85">Next →</a>
+      {% else %}
+        <span class="min-h-[44px] rounded-xl border border-white/10 px-4 py-2 text-sm text-white/35">Next →</span>
       {% endif %}
     </nav>
   {% endif %}

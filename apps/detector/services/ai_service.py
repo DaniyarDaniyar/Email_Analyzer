@@ -73,7 +73,7 @@ def _generate_structured(prompt: str) -> Dict[str, Any]:
                 },
             ],
             response_format={"type": "json_object"},
-            temperature=0.7,
+            temperature=0.2,
             max_tokens=800,
         )
 

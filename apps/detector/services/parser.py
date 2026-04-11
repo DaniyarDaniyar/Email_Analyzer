@@ -1,3 +1,4 @@
+# Python modules
 import hashlib
 import re
 from email import policy
@@ -5,12 +6,13 @@ from email.parser import Parser
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
+# Django modules
 from django.core.cache import cache
 
 
-URL_RE = re.compile(r"https?://[\w\\-\\./?%&=+#:@;~,]+", flags=re.I)
-EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
-IPV4_RE = re.compile(r"\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b")
+URL_RE = re.compile(r'https?://[^\s<>"\']+', flags=re.I)
+EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+IPV4_RE = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
 
 
 def _deobfuscate(text: str) -> str:

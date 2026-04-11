@@ -1,9 +1,13 @@
+# Python modules
 import time
 from typing import Any, Dict, Optional
 
+# Django modules
+from django.core.cache import cache
+
+# Third-party modules
 import requests
 from decouple import config
-from django.core.cache import cache
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -26,6 +30,7 @@ class ReputationService:
         self.session.mount("https://", HTTPAdapter(max_retries=retries))
 
     def _safe_get(self, url: str, headers: Dict[str, str] = None, params: Dict[str, str] = None) -> Dict[str, Any]:
+        """Helper method to perform a GET request and return JSON, handling errors gracefully."""
         try:
             r = self.session.get(url, headers=headers or {}, params=params or {}, timeout=15)
             if r.status_code == 429:
@@ -37,6 +42,7 @@ class ReputationService:
             return {"error": str(e), "status_code": getattr(e, 'response', None) and getattr(e.response, 'status_code', None)}
 
     def check_ip(self, ip: str) -> Dict[str, Any]:
+        """Check reputation of an IP address using AbuseIPDB and VirusTotal."""
         cache_key = f"rep:ip:{ip}"
         cached = cache.get(cache_key)
         if cached is not None:
@@ -69,6 +75,7 @@ class ReputationService:
         return out
 
     def check_domain(self, domain: str) -> Dict[str, Any]:
+        """Check reputation of a domain using VirusTotal."""
         cache_key = f"rep:domain:{domain}"
         cached = cache.get(cache_key)
         if cached is not None:
@@ -89,6 +96,7 @@ class ReputationService:
         return out
 
     def check_url(self, url_to_check: str) -> Dict[str, Any]:
+        """Check reputation of a URL using VirusTotal and URLScan."""
         cache_key = f"rep:url:{url_to_check}"
         cached = cache.get(cache_key)
         if cached is not None:

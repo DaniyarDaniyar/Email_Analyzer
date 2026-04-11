@@ -9,14 +9,14 @@
       <select name="input_type">
         <option value="text">Text</option>
         <option value="url">URL</option>
-        <option value="file">File (pdf/txt)</option>
+        <option value="file">File (pdf/txt/eml)</option>
       </select>
     </label>
     <label id="input-data-label">Text / URL
       <textarea name="input_data" rows="6" placeholder="Paste email content, URL, or text to analyze..."></textarea>
     </label>
     <label id="file-label" style="display:none">File
-      <input type="file" name="file" accept=".pdf,.txt" />
+      <input type="file" name="file" accept=".pdf,.txt,.eml" />
     </label>
     <div style="display:flex;gap:8px">
       <button type="submit" id="scan-btn">Scan</button>

@@ -116,8 +116,16 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',
+        'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/minute',
+        'user': '120/minute',
+    },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
@@ -125,9 +133,9 @@ REST_FRAMEWORK = {
 # ----------------------------------------------
 # Static | Media
 #
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = os.path.join(BASE_DIR, "static")
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 
@@ -149,7 +157,7 @@ CELERY_TASK_TRACK_STARTED = True
 # Cache
 #
 # Uses Redis if CACHE_URL / REDIS_URL are set, otherwise falls back to local memory.
-REDIS_CACHE_URL = os.getenv("CACHE_URL") or os.getenv("REDIS_URL") or "redis://localhost:6379/1"
+REDIS_CACHE_URL = os.getenv("CACHE_URL") or os.getenv("REDIS_URL")
 
 CACHES = {
     "default": {
@@ -158,17 +166,18 @@ CACHES = {
     }
 }
 
-try:
-    # Prefer Redis cache if django-redis is installed and URL is available.
-    import django_redis  # type: ignore  # noqa: F401
+if REDIS_CACHE_URL:
+    try:
+        # Prefer Redis cache if django-redis is installed and URL is available.
+        import django_redis  # type: ignore  # noqa: F401
 
-    CACHES["default"] = {
-        "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": REDIS_CACHE_URL,
-        "OPTIONS": {
-            "CLIENT_CLASS": "django_redis.client.DefaultClient",
-        },
-    }
-except Exception:
-    # Fallback to in-memory cache; application will still work.
-    pass
+        CACHES["default"] = {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_CACHE_URL,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            },
+        }
+    except Exception:
+        # Fallback to in-memory cache; application will still work.
+        pass

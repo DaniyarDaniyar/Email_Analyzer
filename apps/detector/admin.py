@@ -1,11 +1,14 @@
+# Django modules
 from django.contrib import admin
 from django.utils.html import format_html
 
+# Project modules
 from .models import DetectorResult
 
 
 @admin.register(DetectorResult)
 class DetectorResultAdmin(admin.ModelAdmin):
+    """Admin interface for DetectorResult model."""
     list_display = (
         'id', 'user', 'input_type', 'input_preview', 'score', 'is_safe', 'created_at'
     )

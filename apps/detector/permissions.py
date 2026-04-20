@@ -8,4 +8,4 @@ class isOwner(BasePermission):
 
     def has_object_permission(self, request, view, obj):
         # Check if the user is the owner of the object
-        return obj.owner == request.user
+        return getattr(obj, "user", None) == request.user

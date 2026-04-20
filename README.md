@@ -61,6 +61,11 @@ Important environment variables
 - `VIRUSTOTAL_API_KEY`, `ABUSEIPDB_API_KEY`, `URLSCAN_API_KEY` — reputation services.
 - AI keys used by `apps/detector/services/ai_service.py` (OpenAI / Google GenAI).
 - `MEDIA_ROOT`, `MEDIA_URL` — where generated PDFs are stored and served.
+- `ALLOW_GUEST_REPORTS` — enable direct PDF links for unauthenticated scans (default: false).
+- `MASK_PII_IN_REPORTS` — mask emails/URLs/IPs in generated reports (default: false).
+- `RETENTION_DAYS` — days to keep results before purge (default: 0 disables purge).
+- `ENABLE_VT_URL_REPORT` — fetch VirusTotal URL reports after submit (default: false).
+- `ENABLE_RDAP_ENRICHMENT` — enrich domain reputation with RDAP data (default: false).
 
 API (examples)
 --------------
@@ -77,12 +82,14 @@ How reports are produced and downloaded
 --------------------------------------
 - The analysis pipeline: parse input → extract IOCs → check reputations (VirusTotal/AbuseIPDB/URLScan) → aggregate → call AI (`analyze_parsed`) → compute final score → generate PDF via ReportLab.
 
-  The final score is a weighted combination of AI confidence, reputation results, and header
-  anomalies (SPF/DKIM/DMARC). You can tweak the relative importance by setting
-  `SCORE_AI_WEIGHT`, `SCORE_REPUTATION_WEIGHT` and `SCORE_HEADER_WEIGHT` in your
-  Django settings (defaults are 0.7/0.2/0.1 respectively).
+  The final score is a weighted combination of AI confidence, reputation results, header
+  anomalies (SPF/DKIM/DMARC), structural signals, and optional rule hits. You can tweak the
+  relative importance by setting `SCORE_AI_WEIGHT`, `SCORE_REPUTATION_WEIGHT`,
+  `SCORE_HEADER_WEIGHT`, `SCORE_STRUCTURAL_WEIGHT`, and `SCORE_RULES_WEIGHT` in your
+  Django settings (defaults are 0.45/0.2/0.2/0.15/0.0 respectively).
 - Generated PDFs are saved to `MEDIA_ROOT/reports/` and attached to `DetectorResult.report_file`.
 - Download via the API endpoint `GET /api/detector/<id>/report/download/` which streams the PDF with `Content-Disposition: attachment`.
+- For unauthenticated scans, `report_url` is returned only when `ALLOW_GUEST_REPORTS=true`.
 
 Notes & deployment
 ------------------

@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 
 # Project modules
-from .models import DetectorResult
+from .models import DetectorResult, AuditLog
 
 
 @admin.register(DetectorResult)
@@ -28,3 +28,18 @@ class DetectorResultAdmin(admin.ModelAdmin):
         )
 
     input_preview.short_description = 'Input (preview)'
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "action",
+        "user",
+        "object_type",
+        "object_id",
+        "created_at",
+    )
+    list_filter = ("action", "created_at")
+    search_fields = ("user__email", "object_type", "object_id")
+    ordering = ("-created_at",)

@@ -107,9 +107,35 @@
     <p class="mt-2 text-sm leading-relaxed text-white/80">{{ result.explanation }}</p>
   </article>
 
+  {% if result.score_details %}
+  <article class="mt-4 rounded-xl border border-white/15 bg-[#0f1628]/75 p-4">
+    <p class="text-xs uppercase tracking-wide text-white/55">Факторы риска</p>
+    <div class="mt-2 grid gap-2 text-xs text-white/75 md:grid-cols-2">
+      <div>AI: {{ result.score_details.ai_risk_score }}</div>
+      <div>Reputation: {{ result.score_details.reputation_score }}</div>
+      <div>Headers: {{ result.score_details.header_score }}</div>
+      <div>Structural: {{ result.score_details.structural_score }}</div>
+      <div>Rules: {{ result.score_details.rules_score }}</div>
+      <div>Weighted: {{ result.score_details.weighted_score }}</div>
+    </div>
+    {% if result.score_details.rules %}
+      <div class="mt-3 text-xs text-white/70">Сработавшие правила:</div>
+      <ul class="mt-2 space-y-1 text-xs text-white/70">
+        {% for rule in result.score_details.rules %}
+          <li>• {{ rule.id }} ({{ rule.score }})</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </article>
+  {% endif %}
+
   <div class="mt-5 flex flex-wrap gap-3">
     {% if result.report_url %}
       <a href="{{ result.report_url }}" target="_blank" class="btn-glow inline-flex min-h-[44px] items-center rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 px-5 py-2.5 text-sm font-semibold text-[#031116]">Скачать PDF отчёт</a>
+    {% endif %}
+
+    {% if result and not result.report_url and not user.is_authenticated %}
+      <span class="inline-flex min-h-[44px] items-center rounded-xl border border-white/15 bg-white/5 px-4 text-xs text-white/65">PDF доступен после входа</span>
     {% endif %}
 
     {% if user.is_authenticated %}

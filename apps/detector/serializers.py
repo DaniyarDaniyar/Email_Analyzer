@@ -54,10 +54,25 @@ class DetectorResultSerializer(serializers.ModelSerializer):
             "explanation",
             "is_safe",
             "report_file",
+            "status",
+            "started_at",
+            "finished_at",
+            "error_message",
+            "score_details",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "user", "created_at", "updated_at")
+        read_only_fields = (
+            "id",
+            "user",
+            "created_at",
+            "updated_at",
+            "status",
+            "started_at",
+            "finished_at",
+            "error_message",
+            "score_details",
+        )
 
 
 class DetectorResultListSerializer(serializers.ModelSerializer):
@@ -70,6 +85,7 @@ class DetectorResultListSerializer(serializers.ModelSerializer):
             "input_type",
             "score",
             "is_safe",
+            "status",
             "created_at",
         )
         read_only_fields = fields

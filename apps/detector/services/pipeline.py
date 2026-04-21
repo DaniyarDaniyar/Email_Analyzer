@@ -1,6 +1,7 @@
 # Python modules
 import os
 import posixpath
+import tempfile
 from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
@@ -52,12 +53,11 @@ def _build_report_payload(analysis: Dict[str, Any], mask_pii: bool) -> Dict[str,
 
 
 def _generate_report_pdf(report: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
-    media_root = getattr(settings, "MEDIA_ROOT", "media") or "media"
     filename = f"report_{uuid4().hex}.pdf"
-    out_dir = os.path.join(media_root, "reports")
-    out_path = os.path.join(out_dir, filename)
     try:
-        pdf_path = generate_pdf(report, out_path)
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pdf", prefix="report_")
+        os.close(tmp_fd)
+        pdf_path = generate_pdf(report, tmp_path)
         return pdf_path, filename
     except Exception:
         return None, None
@@ -134,6 +134,7 @@ def run_sync_scan(
     allow_report = bool(user) or allow_guest_reports
     mask_pii = bool(getattr(settings, "MASK_PII_IN_REPORTS", False)) or not bool(user)
 
+    started_at = timezone.now()
     analysis = analyze_input(input_type, input_data, use_concurrency=use_concurrency)
 
     pdf_path = None
@@ -145,8 +146,6 @@ def run_sync_scan(
 
     detector_result = None
     if user and user.is_authenticated:
-        started_at = timezone.now()
-        finished_at = timezone.now()
         detector_result = DetectorResult.objects.create(
             user=user,
             input_type=input_type,
@@ -156,16 +155,22 @@ def run_sync_scan(
             is_safe=analysis.get("classification") == "benign",
             status=DetectorResult.STATUS_COMPLETED,
             started_at=started_at,
-            finished_at=finished_at,
             score_details=analysis.get("score_details"),
         )
 
+        detector_result.finished_at = timezone.now()
         if pdf_path and filename and os.path.exists(pdf_path):
             try:
                 with open(pdf_path, "rb") as f:
                     detector_result.report_file.save(filename, DjangoFile(f), save=True)
             except Exception:
                 pass
+            finally:
+                try:
+                    os.unlink(pdf_path)
+                except OSError:
+                    pass
+        detector_result.save(update_fields=["finished_at"])
         report_url = build_report_download_url(request, detector_result)
         log_event("scan_completed", user=user, obj=detector_result)
     elif allow_guest_reports and filename:
@@ -224,6 +229,11 @@ def process_detector_result(detector_result_id: int, *, use_concurrency: bool = 
                     dr.report_file.save(filename, DjangoFile(f), save=True)
             except Exception:
                 pass
+            finally:
+                try:
+                    os.unlink(pdf_path)
+                except OSError:
+                    pass
 
         dr.save()
         log_event("scan_completed", user=dr.user, obj=dr)

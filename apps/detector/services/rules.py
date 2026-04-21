@@ -1,9 +1,12 @@
 # Python modules
+import logging
 import re
 from typing import Any, Dict, List
 
 # Django modules
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 EMAIL_DOMAIN_RE = re.compile(r"@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
 
@@ -116,28 +119,45 @@ def evaluate_rules(parsed: Dict[str, Any]) -> Dict[str, Any]:
         if rule_type == "subject_regex":
             pattern = rule.get("pattern")
             if pattern:
-                if re.search(pattern, subject, flags=re.I):
-                    matched = True
-                    detail = f"subject matched /{pattern}/"
+                try:
+                    if re.search(pattern, subject, flags=re.I):
+                        matched = True
+                        detail = f"subject matched /{pattern}/"
+                except re.error:
+                    logger.warning("Invalid regex pattern in rule %r: %r", rule_id, pattern)
         elif rule_type == "body_regex":
             pattern = rule.get("pattern")
             if pattern:
-                if re.search(pattern, body, flags=re.I):
-                    matched = True
-                    detail = f"body matched /{pattern}/"
+                try:
+                    if re.search(pattern, body, flags=re.I):
+                        matched = True
+                        detail = f"body matched /{pattern}/"
+                except re.error:
+                    logger.warning("Invalid regex pattern in rule %r: %r", rule_id, pattern)
         elif rule_type == "from_regex":
             pattern = rule.get("pattern")
             if pattern:
-                if re.search(pattern, from_header, flags=re.I):
-                    matched = True
-                    detail = f"from matched /{pattern}/"
+                try:
+                    if re.search(pattern, from_header, flags=re.I):
+                        matched = True
+                        detail = f"from matched /{pattern}/"
+                except re.error:
+                    logger.warning("Invalid regex pattern in rule %r: %r", rule_id, pattern)
         elif rule_type == "auth_anomalies_gte":
-            threshold = int(rule.get("threshold", 0) or 0)
+            try:
+                threshold = int(rule.get("threshold", 0) or 0)
+            except (TypeError, ValueError):
+                logger.warning("Invalid threshold value in rule %r: %r", rule_id, rule.get("threshold"))
+                threshold = 0
             if auth_anomalies >= threshold and threshold > 0:
                 matched = True
                 detail = f"auth anomalies >= {threshold}"
         elif rule_type == "url_count_gte":
-            threshold = int(rule.get("threshold", 0) or 0)
+            try:
+                threshold = int(rule.get("threshold", 0) or 0)
+            except (TypeError, ValueError):
+                logger.warning("Invalid threshold value in rule %r: %r", rule_id, rule.get("threshold"))
+                threshold = 0
             if len(urls) >= threshold and threshold > 0:
                 matched = True
                 detail = f"urls >= {threshold}"

@@ -221,7 +221,9 @@ def compute_scores(
         + structural_score * weight_struct
         + rules_score * weight_rules
     )
+    weighted_score = max(0.0, min(100.0, weighted_score))
     final_score = max(weighted_score, ai_risk_score, structural_score, rules_score)
+    final_score = max(0.0, min(100.0, final_score))
 
     breakdown = {
         "ai_risk_score": float(round(ai_risk_score, 2)),

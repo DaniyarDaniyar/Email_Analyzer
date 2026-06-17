@@ -8,6 +8,8 @@ from apps.detector.services.parser import parse_email
 from apps.detector.serializers import ScanRequestSerializer
 from apps.detector.services.report import generate_pdf
 from apps.detector.services.ai_service import _apply_risk_guardrails
+from apps.detector.services.rules import evaluate_rules
+from apps.detector.services.privacy import mask_sensitive_text
 
 
 class DetectorScoringTests(SimpleTestCase):
@@ -178,3 +180,27 @@ class DetectorReportTests(SimpleTestCase):
             out_path = os.path.join(temp_dir, "report.pdf")
             generated_path = generate_pdf(report, out_path)
             self.assertTrue(os.path.exists(generated_path))
+
+
+class DetectorRuleTests(SimpleTestCase):
+    def test_subject_rule_triggers(self):
+        parsed = {
+            "headers": {"Subject": "Urgent invoice requires attention"},
+            "spf": "pass",
+            "dkim": "pass",
+            "dmarc": "pass",
+            "urls": [],
+            "domains": [],
+        }
+        result = evaluate_rules(parsed)
+        self.assertGreater(result["score"], 0)
+        self.assertTrue(any(r["id"] == "subject_urgent_language" for r in result["triggered"]))
+
+
+class DetectorPrivacyTests(SimpleTestCase):
+    def test_mask_sensitive_text(self):
+        text = "Contact john.doe@example.com at https://example.com/path?x=1 ip 192.168.1.10"
+        masked = mask_sensitive_text(text)
+        self.assertIn("***@example.com", masked)
+        self.assertIn("https://example.com/...", masked)
+        self.assertIn("192.168.x.x", masked)

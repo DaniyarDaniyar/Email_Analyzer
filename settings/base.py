@@ -1,3 +1,4 @@
+import json
 import os
 
 from settings.conf import *  # noqa: F403
@@ -128,6 +129,48 @@ REST_FRAMEWORK = {
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
+
+
+# ----------------------------------------------------------------
+# Scoring and detection rules
+#
+SCORE_AI_WEIGHT = float(os.getenv("SCORE_AI_WEIGHT", "0.45"))
+SCORE_REPUTATION_WEIGHT = float(os.getenv("SCORE_REPUTATION_WEIGHT", "0.2"))
+SCORE_HEADER_WEIGHT = float(os.getenv("SCORE_HEADER_WEIGHT", "0.2"))
+SCORE_STRUCTURAL_WEIGHT = float(os.getenv("SCORE_STRUCTURAL_WEIGHT", "0.15"))
+SCORE_RULES_WEIGHT = float(os.getenv("SCORE_RULES_WEIGHT", "0.0"))
+
+# Optional override from environment/local settings.
+_detection_rules_raw = os.getenv("DETECTION_RULES", "").strip()
+if _detection_rules_raw:
+    try:
+        _parsed_detection_rules = json.loads(_detection_rules_raw)
+        DETECTION_RULES = _parsed_detection_rules if isinstance(_parsed_detection_rules, list) else None
+    except Exception:
+        DETECTION_RULES = None
+else:
+    DETECTION_RULES = None
+
+
+# ----------------------------------------------------------------
+# Reporting and privacy
+#
+ALLOW_GUEST_REPORTS = os.getenv("ALLOW_GUEST_REPORTS", "false").lower() in ("1", "true", "yes")
+MASK_PII_IN_REPORTS = os.getenv("MASK_PII_IN_REPORTS", "false").lower() in ("1", "true", "yes")
+
+
+# ----------------------------------------------------------------
+# Threat intel enrichment
+#
+ENABLE_VT_URL_REPORT = os.getenv("ENABLE_VT_URL_REPORT", "false").lower() in ("1", "true", "yes")
+VT_URL_REPORT_DELAY_SEC = float(os.getenv("VT_URL_REPORT_DELAY_SEC", "0") or 0)
+ENABLE_RDAP_ENRICHMENT = os.getenv("ENABLE_RDAP_ENRICHMENT", "false").lower() in ("1", "true", "yes")
+
+
+# ----------------------------------------------------------------
+# Data retention
+#
+RETENTION_DAYS = int(os.getenv("RETENTION_DAYS", "0") or 0)
 
 
 # ----------------------------------------------

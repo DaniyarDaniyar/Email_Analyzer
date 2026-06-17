@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 # Django modules
 from django.core.cache import cache
+from django.conf import settings
 
 # Third-party modules
 import requests
@@ -92,6 +93,13 @@ class ReputationService:
         else:
             out["virustotal"] = {"error": "no_api_key"}
 
+        if getattr(settings, "ENABLE_RDAP_ENRICHMENT", False):
+            try:
+                rdap_url = f"https://rdap.org/domain/{domain}"
+                out["rdap"] = self._safe_get(rdap_url)
+            except Exception as e:
+                out["rdap"] = {"error": str(e)}
+
         cache.set(cache_key, out, timeout=60 * 60 * 12)
         return out
 
@@ -113,6 +121,16 @@ class ReputationService:
                 if resp.status_code in (200, 201):
                     rj = resp.json()
                     out["virustotal_submit"] = rj
+                    if getattr(settings, "ENABLE_VT_URL_REPORT", False):
+                        vt_id = None
+                        if isinstance(rj, dict):
+                            vt_id = (rj.get("data") or {}).get("id")
+                        if vt_id:
+                            delay = float(getattr(settings, "VT_URL_REPORT_DELAY_SEC", 0) or 0)
+                            if delay > 0:
+                                time.sleep(delay)
+                            report_url = f"https://www.virustotal.com/api/v3/urls/{vt_id}"
+                            out["virustotal_report"] = self._safe_get(report_url, headers=headers)
                 else:
                     out["virustotal_submit"] = {"status_code": resp.status_code, "text": resp.text}
             except Exception as e:

@@ -18,6 +18,9 @@
             <div class="flex flex-wrap items-center gap-2">
               <span class="rounded-full border border-cyan-300/35 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-200">#{{ forloop.counter0|add:start_index }}</span>
               <span class="rounded-full border border-white/20 px-3 py-1 text-xs text-white/85">{{ it.input_type|upper }}</span>
+              {% if it.status and it.status != 'completed' %}
+                <span class="rounded-full border border-amber-300/40 bg-amber-300/10 px-3 py-1 text-xs text-amber-200">{{ it.status|upper }}</span>
+              {% endif %}
               {% if it.is_safe %}
                 <span class="rounded-full border border-emerald-300/35 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-200">SAFE</span>
               {% else %}

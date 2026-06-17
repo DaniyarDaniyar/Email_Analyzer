@@ -1,12 +1,11 @@
 #Python modules
 from typing import Any
-import logging
-from uuid import uuid4
 from drf_spectacular.utils import extend_schema, OpenApiResponse
 
 #Django_modeul
 from django.db.models.query import QuerySet
 from django.http import FileResponse
+from django.urls import reverse
 
 #Django Rest Framework modules
 from rest_framework.viewsets import ViewSet
@@ -32,21 +31,10 @@ from apps.detector.serializers import (
 )
 from apps.abstracts.paginators import AbstractPageNumberPaginator
 from apps.abstracts.mixins import DRFResponseMixin
-from apps.detector.services.ai_service import analyze_parsed, analyze_url
-from urllib.parse import urlparse
 from apps.detector.services.file_service import extract_text_from_pdf, extract_text_from_txt, extract_text_from_eml
-from apps.detector.services.parser import parse_email
-from apps.detector.services.analysis import build_reputation, compute_scores
-from apps.detector.services.report import generate_pdf
-from django.conf import settings
-import os
-from django.core.files import File as DjangoFile
+from apps.detector.services.pipeline import run_sync_scan, create_queued_result, build_report_download_url
+from apps.detector.services.audit import log_event
 from apps.detector.tasks import analyze_email_task
-
-
-logger = logging.getLogger(__name__)
-
-
 class DetectorViewSet(ViewSet, DRFResponseMixin):
     """ViewSet for scanning emails/URLs and viewing personal scan history."""
 
@@ -109,166 +97,28 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
             if not request.user.is_authenticated:
                 return DRFResponse({"error": "Authentication required for async scan"}, status=HTTP_403_FORBIDDEN)
 
-            detector_result = DetectorResult.objects.create(
-                user=request.user,
-                input_type=input_type,
-                input_data=input_data,
-            )
+            detector_result = create_queued_result(request.user, input_type, input_data)
             analyze_email_task.delay(detector_result.id)
+            status_url = request.build_absolute_uri(
+                reverse("detector-status", kwargs={"pk": detector_result.id})
+            )
             return DRFResponse(
-                {"status": "queued", "result_id": detector_result.id},
+                {"status": "queued", "result_id": detector_result.id, "status_url": status_url},
                 status=HTTP_201_CREATED,
             )
 
-        # Full pipeline: parse -> reputation checks -> AI -> scoring -> PDF report
-        if input_type in ["text", "file"]:
-            try:
-                parsed = parse_email(input_data)
-            except Exception as e:
-                return DRFResponse({"error": f"Parsing error: {e}"}, status=HTTP_400_BAD_REQUEST)
+        try:
+            response_data = run_sync_scan(
+                input_type,
+                input_data,
+                user=request.user if request.user.is_authenticated else None,
+                request=request,
+                use_concurrency=True,
+            )
+        except Exception as e:
+            return DRFResponse({"error": f"Analysis error: {e}"}, status=HTTP_400_BAD_REQUEST)
 
-            # Reputation checks (concurrent)
-            reputation = build_reputation(parsed, use_concurrency=True)
-
-            # Call AI on aggregated parsed+reputation
-            try:
-                ai_out = analyze_parsed(parsed, reputation)
-            except Exception as e:
-                return DRFResponse({"error": f"AI analysis error: {e}"}, status=HTTP_400_BAD_REQUEST)
-
-            scores = compute_scores(parsed, reputation, ai_out)
-            final_score = scores["final_score"]
-
-            # Build report structure
-            report = {
-                "title": "Email Analysis Report",
-                "summary": f"Final score: {final_score:.2f}",
-                "parsed": parsed,
-                "reputation": reputation,
-                "ai": ai_out,
-                "scoring": scores,
-            }
-
-            # Save PDF to media/reports
-            media_root = getattr(settings, "MEDIA_ROOT", "media") or "media"
-            filename = f"report_{uuid4().hex}.pdf"
-            out_dir = os.path.join(media_root, "reports")
-            out_path = os.path.join(out_dir, filename)
-            try:
-                pdf_path = generate_pdf(report, out_path)
-                pdf_url = os.path.join(getattr(settings, "MEDIA_URL", "/media/"), "reports", filename)
-            except Exception:
-                logger.exception("Failed to generate PDF report for input_type=%s", input_type)
-                pdf_path = None
-                pdf_url = None
-
-            # Save to DB only if user is authenticated
-            detector_result = None
-            if request.user.is_authenticated:
-                detector_result = DetectorResult.objects.create(
-                    user=request.user,
-                    input_type=input_type,
-                    input_data=input_data,
-                    score=round(final_score, 2),
-                    explanation=ai_out.get("reasoning", ""),
-                    is_safe=not bool(ai_out.get("is_phishing", False)),
-                )
-                # attach generated PDF to FileField if exists
-                if pdf_path and os.path.exists(pdf_path):
-                    try:
-                        with open(pdf_path, "rb") as f:
-                            django_file = DjangoFile(f)
-                            detector_result.report_file.save(filename, django_file, save=True)
-                    except Exception:
-                        logger.exception("Failed to attach PDF report to detector_result_id=%s", detector_result.id)
-
-            response_data = {
-                "classification": "phishing" if ai_out.get("is_phishing") else "benign",
-                "score": round(final_score, 2),
-                "explanation": ai_out.get("reasoning", ""),
-                "saved": detector_result is not None,
-                "result_id": detector_result.id if detector_result else None,
-                "report_url": pdf_url,
-            }
-
-            return DRFResponse(response_data, status=HTTP_201_CREATED)
-        else:
-            # URL path: build minimal parsed/reputation and use analyze_parsed
-            try:
-                parsed = {"urls": [input_data], "domains": [], "ips": []}
-                netloc = urlparse(input_data).netloc or input_data
-                # strip port if present
-                domain = netloc.split(":")[0]
-                if domain:
-                    parsed["domains"].append(domain)
-            except Exception:
-                parsed = {"urls": [input_data], "domains": [], "ips": []}
-
-            # Reputation checks (only for found indicators)
-            reputation = build_reputation(parsed, use_concurrency=True)
-
-            try:
-                ai_out = analyze_url(input_data, reputation)
-            except Exception as e:
-                return DRFResponse({"error": f"AI analysis error: {e}"}, status=HTTP_400_BAD_REQUEST)
-
-            scores = compute_scores(parsed, reputation, ai_out)
-            final_score = scores["final_score"]
-
-            report = {
-                "title": "Email Analysis Report",
-                "summary": f"Final score: {final_score:.2f}",
-                "parsed": parsed,
-                "reputation": reputation,
-                "ai": ai_out,
-                "scoring": scores,
-            }
-
-            media_root = getattr(settings, "MEDIA_ROOT", "media") or "media"
-            filename = f"report_{uuid4().hex}.pdf"
-            out_dir = os.path.join(media_root, "reports")
-            out_path = os.path.join(out_dir, filename)
-            try:
-                pdf_path = generate_pdf(report, out_path)
-                pdf_url = os.path.join(getattr(settings, "MEDIA_URL", "/media/"), "reports", filename)
-            except Exception:
-                logger.exception("Failed to generate URL-scan PDF report")
-                pdf_path = None
-                pdf_url = None
-
-            result = {
-                "classification": "phishing" if ai_out.get("is_phishing") else "benign",
-                "score": round(final_score, 2),
-                "explanation": ai_out.get("reasoning", ai_out.get("explanation", "")),
-            }
-
-            detector_result = None
-            if request.user.is_authenticated:
-                detector_result = DetectorResult.objects.create(
-                    user=request.user,
-                    input_type=input_type,
-                    input_data=input_data,
-                    score=result.get("score"),
-                    explanation=result.get("explanation"),
-                    is_safe=result.get("classification") == "benign",
-                )
-                if pdf_path and os.path.exists(pdf_path):
-                    try:
-                        with open(pdf_path, "rb") as f:
-                            django_file = DjangoFile(f)
-                            detector_result.report_file.save(filename, django_file, save=True)
-                    except Exception:
-                        logger.exception("Failed to attach URL-scan PDF report to detector_result_id=%s", detector_result.id)
-
-            response_data = {
-                "classification": result.get("classification"),
-                "score": result.get("score"),
-                "explanation": result.get("explanation"),
-                "saved": detector_result is not None,
-                "result_id": detector_result.id if detector_result else None,
-                "report_url": pdf_url,
-            }
-            return DRFResponse(response_data, status=HTTP_201_CREATED)
+        return DRFResponse(response_data, status=HTTP_201_CREATED)
 
     @extend_schema(
         summary="List user's scan history",
@@ -327,6 +177,41 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
         return DRFResponse(serializer.data, status=HTTP_200_OK)
 
     @extend_schema(
+        summary="Get scan status",
+        description="Retrieve async status for a specific scan result (only accessible to owner)",
+        responses={
+            HTTP_200_OK: OpenApiResponse(description="Status payload"),
+            HTTP_403_FORBIDDEN: OpenApiResponse(description="Not owner of result"),
+            HTTP_405_METHOD_NOT_ALLOWED: OpenApiResponse(description="Only GET allowed"),
+        },
+    )
+    @action(
+        detail=True,
+        methods=["GET"],
+        permission_classes=[IsAuthenticated],
+        url_path="status",
+    )
+    def status(self, request: DRFRequest, pk=None, *args: tuple[Any, ...], **kwargs: dict[str, Any]) -> DRFResponse:
+        try:
+            result = DetectorResult.objects.get(id=pk, user=request.user)
+        except DetectorResult.DoesNotExist:
+            return DRFResponse(
+                {"error": "Result not found or access denied"},
+                status=HTTP_403_FORBIDDEN,
+            )
+
+        return DRFResponse(
+            {
+                "status": result.status,
+                "score": result.score,
+                "finished_at": result.finished_at,
+                "error_message": result.error_message,
+                "report_url": build_report_download_url(request, result),
+            },
+            status=HTTP_200_OK,
+        )
+
+    @extend_schema(
         summary="Download scan result PDF report",
         description="Download PDF report for a specific scan result (only accessible to owner)",
         responses={
@@ -362,6 +247,7 @@ class DetectorViewSet(ViewSet, DRFResponseMixin):
             filename = result.report_file.name.split('/')[-1]
             response = FileResponse(file_obj, content_type="application/pdf")
             response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            log_event("report_downloaded", user=request.user, obj=result, request=request)
             return response
         except Exception as e:
             return DRFResponse(

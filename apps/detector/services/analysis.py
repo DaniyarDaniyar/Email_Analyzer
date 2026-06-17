@@ -4,6 +4,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import re
 from typing import Any, Dict
 
+# Django modules
+from django.conf import settings
+
 # Project modules
 from apps.detector.services.reputation import ReputationService
 
@@ -64,7 +67,12 @@ def build_reputation(parsed: Dict[str, Any], use_concurrency: bool = True) -> Di
     return reputation
 
 
-def compute_scores(parsed: Dict[str, Any], reputation: Dict[str, Any], ai_out: Dict[str, Any]) -> Dict[str, float]:
+def compute_scores(
+    parsed: Dict[str, Any],
+    reputation: Dict[str, Any],
+    ai_out: Dict[str, Any],
+    rules_result: Dict[str, Any] | None = None,
+) -> Dict[str, float | Dict[str, float]]:
     """Combine AI output, reputation and header anomalies into final scores.
 
     The AI service returns a confidence score plus an ``is_phishing`` boolean.
@@ -77,7 +85,7 @@ def compute_scores(parsed: Dict[str, Any], reputation: Dict[str, Any], ai_out: D
 
     def _is_malicious(rep: dict) -> bool:
         try:
-            vt = rep.get("virustotal") or rep.get("virustotal_submit")
+            vt = rep.get("virustotal_report") or rep.get("virustotal") or rep.get("virustotal_submit")
             if isinstance(vt, dict):
                 data = vt.get("data") or vt
                 attrs = data.get("attributes") if isinstance(data, dict) else None
@@ -193,17 +201,45 @@ def compute_scores(parsed: Dict[str, Any], reputation: Dict[str, Any], ai_out: D
         structural_score += 15.0
     structural_score = min(structural_score, 100.0)
 
+    rules_score = 0.0
+    if rules_result and isinstance(rules_result, dict):
+        try:
+            rules_score = float(rules_result.get("score", 0.0))
+        except (TypeError, ValueError):
+            rules_score = 0.0
+
+    weight_ai = float(getattr(settings, "SCORE_AI_WEIGHT", 0.45))
+    weight_rep = float(getattr(settings, "SCORE_REPUTATION_WEIGHT", 0.2))
+    weight_header = float(getattr(settings, "SCORE_HEADER_WEIGHT", 0.2))
+    weight_struct = float(getattr(settings, "SCORE_STRUCTURAL_WEIGHT", 0.15))
+    weight_rules = float(getattr(settings, "SCORE_RULES_WEIGHT", 0.0))
+
     weighted_score = (
-        ai_risk_score * 0.45
-        + malicious_ratio * 100 * 0.2
-        + header_score * 0.2
-        + structural_score * 0.15
+        ai_risk_score * weight_ai
+        + malicious_ratio * 100 * weight_rep
+        + header_score * weight_header
+        + structural_score * weight_struct
+        + rules_score * weight_rules
     )
-    final_score = max(weighted_score, ai_risk_score, structural_score)
+    weighted_score = max(0.0, min(100.0, weighted_score))
+    final_score = max(weighted_score, ai_risk_score, structural_score, rules_score)
+    final_score = max(0.0, min(100.0, final_score))
+
+    breakdown = {
+        "ai_risk_score": float(round(ai_risk_score, 2)),
+        "reputation_score": float(round(malicious_ratio * 100, 2)),
+        "header_score": float(round(header_score, 2)),
+        "structural_score": float(round(structural_score, 2)),
+        "rules_score": float(round(rules_score, 2)),
+        "weighted_score": float(round(weighted_score, 2)),
+    }
 
     return {
         "final_score": float(round(final_score, 2)),
         "malicious_ratio": float(malicious_ratio),
         "header_score": float(round(header_score, 2)),
+        "structural_score": float(round(structural_score, 2)),
+        "rules_score": float(round(rules_score, 2)),
+        "breakdown": breakdown,
     }
 

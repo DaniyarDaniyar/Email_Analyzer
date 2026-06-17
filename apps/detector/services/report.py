@@ -64,6 +64,7 @@ def generate_pdf(report: Dict[str, Any], out_path: str) -> str:
         ("Summary", report.get("summary", "")),
         ("AI Result", json.dumps(report.get("ai", {}), indent=2, ensure_ascii=True)),
         ("Scoring", json.dumps(report.get("scoring", {}), indent=2, ensure_ascii=True)),
+        ("Score Details", json.dumps(report.get("score_details", {}), indent=2, ensure_ascii=True)),
         ("Parsed Indicators", json.dumps(report.get("parsed", {}), indent=2, ensure_ascii=True)),
         ("Reputation", json.dumps(report.get("reputation", {}), indent=2, ensure_ascii=True)),
     ]

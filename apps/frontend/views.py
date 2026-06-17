@@ -4,29 +4,15 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.views.decorators.http import require_http_methods
-from django.conf import settings
-from django.core.files import File as DjangoFile
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 
 # Project modules
-from apps.detector.services.ai_service import analyze_parsed, analyze_url
-from urllib.parse import urlparse
 from apps.detector.services.file_service import extract_text_from_pdf, extract_text_from_txt, extract_text_from_eml
 from apps.detector.models import DetectorResult
 from apps.users.serializers import UserRegisterSerializer
-from apps.detector.services.parser import parse_email
-from apps.detector.services.analysis import build_reputation, compute_scores
-from apps.detector.services.report import generate_pdf
+from apps.detector.services.pipeline import run_sync_scan
 
 # Python modules
-import os
-import logging
-from uuid import uuid4
-
-
-logger = logging.getLogger(__name__)
-
-
 @require_http_methods(["GET", "POST"])
 def index(request):
     """Show scan form and handle scan submissions."""
@@ -57,148 +43,17 @@ def index(request):
             messages.error(request, f'File error: {e}')
             return redirect('index')
 
-        # Full pipeline: parse -> reputation checks -> AI -> scoring -> PDF report
-        if input_type in ['text', 'file']:
-            try:
-                parsed = parse_email(input_data)
-            except Exception as e:
-                messages.error(request, f'Parsing error: {e}')
-                return redirect('index')
-
-            # Reputation checks (concurrent)
-            reputation = build_reputation(parsed, use_concurrency=True)
-
-            # Call AI on aggregated parsed+reputation
-            try:
-                ai_out = analyze_parsed(parsed, reputation)
-            except Exception as e:
-                messages.error(request, f'AI analysis error: {e}')
-                return redirect('index')
-
-            scores = compute_scores(parsed, reputation, ai_out)
-            final_score = scores["final_score"]
-
-            # Build report structure
-            report = {
-                "title": "Email Analysis Report",
-                "summary": f"Final score: {final_score:.2f}",
-                "parsed": parsed,
-                "reputation": reputation,
-                "ai": ai_out,
-                "scoring": scores,
-            }
-
-            # Save PDF to media/reports
-            media_root = getattr(settings, "MEDIA_ROOT", "media") or "media"
-            filename = f"report_{uuid4().hex}.pdf"
-            out_dir = os.path.join(media_root, "reports")
-            out_path = os.path.join(out_dir, filename)
-            pdf_path = None
-            pdf_url = None
-            try:
-                pdf_path = generate_pdf(report, out_path)
-                pdf_url = os.path.join(getattr(settings, "MEDIA_URL", "/media/"), "reports", filename)
-            except Exception:
-                logger.exception("Failed to generate PDF report for input_type=%s", input_type)
-
-            # save if authenticated
-            detector_obj = None
-            if request.user.is_authenticated:
-                detector_obj = DetectorResult.objects.create(
-                    user=request.user,
-                    input_type=input_type,
-                    input_data=input_data,
-                    score=round(final_score, 2),
-                    explanation=ai_out.get("reasoning", ""),
-                    is_safe=not bool(ai_out.get("is_phishing", False)),
-                )
-                # attach generated PDF to FileField if exists
-                if pdf_path and os.path.exists(pdf_path):
-                    try:
-                        with open(pdf_path, "rb") as f:
-                            django_file = DjangoFile(f)
-                            detector_obj.report_file.save(filename, django_file, save=True)
-                    except Exception:
-                        logger.exception("Failed to attach PDF report to detector_result_id=%s", detector_obj.id)
-
-            result = {
-                'classification': "phishing" if ai_out.get("is_phishing") else "benign",
-                'score': round(final_score, 2),
-                'explanation': ai_out.get("reasoning", ""),
-                'saved': detector_obj is not None,
-                'result_id': detector_obj.id if detector_obj else None,
-                'report_url': pdf_url,
-            }
-        else:
-            # URL path: build minimal parsed/reputation and use analyze_parsed
-            try:
-                parsed = {"urls": [input_data], "domains": [], "ips": []}
-                netloc = urlparse(input_data).netloc or input_data
-                domain = netloc.split(":")[0]
-                if domain:
-                    parsed["domains"].append(domain)
-            except Exception:
-                parsed = {"urls": [input_data], "domains": [], "ips": []}
-
-            # Re-use the same reputation service used by the API view
-            reputation = build_reputation(parsed, use_concurrency=True)
-
-            try:
-                ai_out = analyze_url(input_data, reputation)
-            except Exception as e:
-                messages.error(request, f'AI analysis error: {e}')
-                return redirect('index')
-
-            scores = compute_scores(parsed, reputation, ai_out)
-            final_score = scores["final_score"]
-
-            report = {
-                "title": "Email Analysis Report",
-                "summary": f"Final score: {final_score:.2f}",
-                "parsed": parsed,
-                "reputation": reputation,
-                "ai": ai_out,
-                "scoring": scores,
-            }
-
-            media_root = getattr(settings, "MEDIA_ROOT", "media") or "media"
-            filename = f"report_{uuid4().hex}.pdf"
-            out_dir = os.path.join(media_root, "reports")
-            out_path = os.path.join(out_dir, filename)
-            pdf_path = None
-            pdf_url = None
-            try:
-                pdf_path = generate_pdf(report, out_path)
-                pdf_url = os.path.join(getattr(settings, "MEDIA_URL", "/media/"), "reports", filename)
-            except Exception:
-                logger.exception("Failed to generate URL-scan PDF report")
-
-            detector_obj = None
-            if request.user.is_authenticated:
-                detector_obj = DetectorResult.objects.create(
-                    user=request.user,
-                    input_type=input_type,
-                    input_data=input_data,
-                    score=round(final_score, 2),
-                    explanation=ai_out.get('reasoning', ai_out.get('explanation', '')),
-                    is_safe=not bool(ai_out.get('is_phishing', False)),
-                )
-                if pdf_path and os.path.exists(pdf_path):
-                    try:
-                        with open(pdf_path, "rb") as f:
-                            django_file = DjangoFile(f)
-                            detector_obj.report_file.save(filename, django_file, save=True)
-                    except Exception:
-                        logger.exception("Failed to attach URL-scan PDF report to detector_result_id=%s", detector_obj.id)
-
-            result = {
-                'classification': 'phishing' if ai_out.get('is_phishing') else 'benign',
-                'score': round(final_score, 2),
-                'explanation': ai_out.get('reasoning', ai_out.get('explanation', '')),
-                'saved': detector_obj is not None,
-                'result_id': detector_obj.id if detector_obj else None,
-                'report_url': pdf_url,
-            }
+        try:
+            result = run_sync_scan(
+                input_type,
+                input_data,
+                user=request.user if request.user.is_authenticated else None,
+                request=request,
+                use_concurrency=True,
+            )
+        except Exception as e:
+            messages.error(request, f'Analysis error: {e}')
+            return redirect('index')
 
     return render(request, 'frontend/index.html', {'result': result})
 
